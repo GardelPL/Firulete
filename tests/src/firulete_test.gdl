@@ -1,0 +1,206 @@
+-- Executable test suite exercising all verified algorithms in `firulete`.
+--
+--   gardelc --project firulete/tests --strict --run
+--
+-- Exit code 0 means all checks passed; k > 0 identifies the first failing check.
+program FIRULETE_TEST
+
+feature {ANY}
+
+  list_eq_i64(a: LIST[I64], b: LIST[I64]): BOOL
+    variant
+      a.length
+    do
+      if a.length != b.length then
+        False
+      else if a.length = 0 then
+        True
+      else
+        a.head = b.head and list_eq_i64(a.tail, b.tail)
+      end end
+    end
+
+  list_eq_nat(a: LIST[NAT], b: LIST[NAT]): BOOL
+    variant
+      a.length
+    do
+      if a.length != b.length then
+        False
+      else if a.length = 0 then
+        True
+      else
+        a.head = b.head and list_eq_nat(a.tail, b.tail)
+      end end
+    end
+
+  check_insertion_sort: U64
+    do
+      -- 1. Empty list
+      let empty_i64: LIST[I64] = LIST.empty
+      let s_empty = INSERTION_SORT.sort(empty_i64)
+
+      -- 2. Single element
+      let one = empty_i64.prepend(42)
+      let s_one = INSERTION_SORT.sort(one)
+
+      -- 3. Already sorted [1, 2, 3, 4]
+      let sorted_in = empty_i64.prepend(4).prepend(3).prepend(2).prepend(1)
+      let s_sorted = INSERTION_SORT.sort(sorted_in)
+
+      -- 4. Reverse sorted [5, 4, 3, 2, 1] -> [1, 2, 3, 4, 5]
+      let rev_in = empty_i64.prepend(1).prepend(2).prepend(3).prepend(4).prepend(5)
+      let rev_expected = empty_i64.prepend(5).prepend(4).prepend(3).prepend(2).prepend(1)
+      let s_rev = INSERTION_SORT.sort(rev_in)
+
+      -- 5. Duplicates & negatives [3, -1, 2, 3, -1, 0] -> [-1, -1, 0, 2, 3, 3]
+      let dup_in = empty_i64.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let dup_expected = empty_i64.prepend(3).prepend(3).prepend(2).prepend(0).prepend(-1).prepend(-1)
+      let s_dup = INSERTION_SORT.sort(dup_in)
+
+      -- 6. Direct insert at front, middle, back into [2, 5, 8]
+      let base = empty_i64.prepend(8).prepend(5).prepend(2)
+      let ins_front = INSERTION_SORT.insert(1, base)
+      let exp_front = empty_i64.prepend(8).prepend(5).prepend(2).prepend(1)
+      let ins_mid = INSERTION_SORT.insert(6, base)
+      let exp_mid = empty_i64.prepend(8).prepend(6).prepend(5).prepend(2)
+      let ins_back = INSERTION_SORT.insert(10, base)
+      let exp_back = empty_i64.prepend(10).prepend(8).prepend(5).prepend(2)
+
+      -- 7. Polymorphic instantiation on NAT: [9, 1, 5, 1] -> [1, 1, 5, 9]
+      let empty_nat: LIST[NAT] = LIST.empty
+      let nat_in = empty_nat.prepend(1).prepend(5).prepend(1).prepend(9)
+      let nat_expected = empty_nat.prepend(9).prepend(5).prepend(1).prepend(1)
+      let s_nat = INSERTION_SORT.sort(nat_in)
+
+      if not list_eq_i64(s_empty, empty_i64) then 1
+      else if not list_eq_i64(s_one, one) then 2
+      else if not list_eq_i64(s_sorted, sorted_in) then 3
+      else if not list_eq_i64(s_rev, rev_expected) then 4
+      else if not list_eq_i64(s_dup, dup_expected) then 5
+      else if not list_eq_i64(ins_front, exp_front) then 6
+      else if not list_eq_i64(ins_mid, exp_mid) then 7
+      else if not list_eq_i64(ins_back, exp_back) then 8
+      else if not list_eq_nat(s_nat, nat_expected) then 9
+      else if not INSERTION_SORT.is_sorted(s_dup) then 10
+      else if not INSERTION_SORT.is_sorted(s_nat) then 11
+      else 0
+      end end end end end end end end end end end
+    end
+
+  check_binary_search: U64
+    do
+      let empty_i64: LIST[I64] = LIST.empty
+      let one = empty_i64.prepend(42)
+      let exp_0: OPTION[NAT] = Some(0)
+      let exp_3: OPTION[NAT] = Some(3)
+      let exp_7: OPTION[NAT] = Some(7)
+
+      -- Sorted list [-10, -3, -3, 0, 5, 12, 12, 99]
+      let arr = empty_i64.prepend(99).prepend(12).prepend(12).prepend(5).prepend(0).prepend(-3).prepend(-3).prepend(-10)
+
+      -- Integration with INSERTION_SORT
+      let unsorted = empty_i64.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let sorted = INSERTION_SORT.sort(unsorted)
+
+      -- Polymorphic instantiation on NAT: [1, 1, 5, 9]
+      let empty_nat: LIST[NAT] = LIST.empty
+      let nat_unsorted = empty_nat.prepend(1).prepend(5).prepend(1).prepend(9)
+      let nat_sorted = INSERTION_SORT.sort(nat_unsorted)
+      let nat_exp_2: OPTION[NAT] = Some(2)
+      let nat_exp_3: OPTION[NAT] = Some(3)
+
+      -- Polymorphic instantiation on STRING: ["alpha", "beta", "gamma", "gamma", "zeta"]
+      let empty_str: LIST[STRING] = LIST.empty
+      let str_arr = empty_str.prepend("zeta").prepend("gamma").prepend("gamma").prepend("beta").prepend("alpha")
+      let str_exp_0: OPTION[NAT] = Some(0)
+      let str_exp_1: OPTION[NAT] = Some(1)
+      let str_exp_4: OPTION[NAT] = Some(4)
+
+      if not BINARY_SEARCH.search(empty_i64, 7).is_none then 20
+      else if BINARY_SEARCH.contains(empty_i64, 7) then 21
+      else if not BINARY_SEARCH.search(one, 42).equals(exp_0) then 22
+      else if not BINARY_SEARCH.search(one, 41).is_none then 23
+      else if not BINARY_SEARCH.search(one, 43).is_none then 24
+      else if not BINARY_SEARCH.is_sorted(arr) then 25
+      else if not BINARY_SEARCH.search(arr, -10).equals(exp_0) then 26
+      else if not BINARY_SEARCH.search(arr, 99).equals(exp_7) then 27
+      else if not BINARY_SEARCH.contains(arr, -3) then 28
+      else if not BINARY_SEARCH.contains(arr, 12) then 29
+      else if not BINARY_SEARCH.search(arr, -11).is_none then 30
+      else if not BINARY_SEARCH.search(arr, 1).is_none then 31
+      else if not BINARY_SEARCH.search(arr, 100).is_none then 32
+      else if BINARY_SEARCH.contains(arr, 1) then 33
+      else if not BINARY_SEARCH.search_range(arr, 0, 3, 3).is_none then 34
+      else if not BINARY_SEARCH.search_range(arr, 0, 2, 6).equals(exp_3) then 35
+      else if not BINARY_SEARCH.search_range(arr, -10, 2, 6).is_none then 36
+      else if not BINARY_SEARCH.search_range(arr, 99, 2, 6).is_none then 37
+      else if not BINARY_SEARCH.is_sorted(sorted) then 38
+      else if not BINARY_SEARCH.contains(sorted, -1) then 39
+      else if not BINARY_SEARCH.contains(sorted, 3) then 40
+      else if not BINARY_SEARCH.search(sorted, 4).is_none then 41
+      else if not BINARY_SEARCH.is_sorted(nat_sorted) then 42
+      else if not BINARY_SEARCH.contains(nat_sorted, 1) then 43
+      else if not BINARY_SEARCH.search(nat_sorted, 5).equals(nat_exp_2) then 44
+      else if not BINARY_SEARCH.search(nat_sorted, 9).equals(nat_exp_3) then 45
+      else if not BINARY_SEARCH.search(nat_sorted, 4).is_none then 46
+      else if not BINARY_SEARCH.is_sorted(str_arr) then 47
+      else if not BINARY_SEARCH.search(str_arr, "alpha").equals(str_exp_0) then 48
+      else if not BINARY_SEARCH.search(str_arr, "beta").equals(str_exp_1) then 49
+      else if not BINARY_SEARCH.contains(str_arr, "gamma") then 50
+      else if not BINARY_SEARCH.search(str_arr, "zeta").equals(str_exp_4) then 51
+      else if not BINARY_SEARCH.search(str_arr, "delta").is_none then 52
+      else if BINARY_SEARCH.contains(str_arr, "omega") then 53
+      else 0
+      end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end
+    end
+
+  client_absent_i64(xs: LIST[I64], target: I64, i: NAT): BOOL
+    require
+      sorted: BINARY_SEARCH.is_sorted(xs)
+      fits: xs.length <= 18446744073709551615
+      in_bounds: i < xs.length
+      not_found: BINARY_SEARCH.search(xs, target).is_none
+    do
+      True
+    ensure
+      missing: LIST_OPS.at(xs, i) != target
+    end
+
+  client_absent_str(xs: LIST[STRING], target: STRING, i: NAT): BOOL
+    require
+      sorted: BINARY_SEARCH.is_sorted(xs)
+      fits: xs.length <= 18446744073709551615
+      in_bounds: i < xs.length
+      not_found: BINARY_SEARCH.search(xs, target).is_none
+    do
+      True
+    ensure
+      missing: not LIST_OPS.at(xs, i).equals(target)
+    end
+
+  main(args: SEQ[STRING]): IO[EXIT_CODE]
+    do
+      let rc1 = check_insertion_sort
+      if rc1 != 0 then
+        with IO
+          IO.print_line("firulete-tests: insertion_sort check failed")
+          IO.exit(rc1)
+        end
+      else
+        let rc2 = check_binary_search
+        if rc2 = 0 then
+          with IO
+            IO.print_line("firulete-tests: all checks passed")
+            IO.exit(0)
+          end
+        else
+          with IO
+            IO.print_line("firulete-tests: binary_search check failed")
+            IO.exit(rc2)
+          end
+        end
+      end
+    end
+
+end
+

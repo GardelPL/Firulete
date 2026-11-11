@@ -1,0 +1,232 @@
+module INSERTION_SORT[K: ORD]
+
+create {ANY}
+
+  all_ge(lo: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        (not xs.head.less_than(lo)) and INSERTION_SORT.all_ge(lo, xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result
+    end
+
+  is_sorted(xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        INSERTION_SORT.all_ge(xs.head, xs.tail) and INSERTION_SORT.is_sorted(xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result
+      single_case: xs.length = 1 implies Result
+      cons_case: xs.length > 0 implies (Result = (INSERTION_SORT.all_ge(xs.head, xs.tail) and INSERTION_SORT.is_sorted(xs.tail)))
+    end
+
+  count_of(x: K, xs: LIST[K]): MATH_INT
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        0
+      else
+        let rest = INSERTION_SORT.count_of(x, xs.tail)
+        if x.equals(xs.head) then rest + 1 else rest end
+      end
+    end
+
+  all_ge_weaken(a: K, b: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        if a.less_than(b) and (not xs.head.less_than(b)) then
+          check trans: not xs.head.less_than(a) end
+          INSERTION_SORT.all_ge_weaken(a, b, xs.tail)
+        else
+          INSERTION_SORT.all_ge_weaken(a, b, xs.tail)
+        end
+      end
+    ensure
+      holds: Result
+      above_a: (a.less_than(b) and INSERTION_SORT.all_ge(b, xs)) implies INSERTION_SORT.all_ge(a, xs)
+    end
+
+  all_ge_insert(lo: K, x: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        let empty_list: LIST[K] = LIST.empty
+        let whole: LIST[K] = empty_list.prepend(x)
+        check
+          eq_e: INSERTION_SORT.insert(x, xs) = whole
+          len_e: whole.length > 0
+        end
+        True
+      else if x.less_than(xs.head) then
+        let whole: LIST[K] = xs.prepend(x)
+        check
+          eq_lt: INSERTION_SORT.insert(x, xs) = whole
+          len_lt: whole.length > 0
+        end
+        True
+      else
+        let ins_tail = INSERTION_SORT.insert(x, xs.tail)
+        let whole = ins_tail.prepend(xs.head)
+        check
+          rec_ge: INSERTION_SORT.all_ge_insert(lo, x, xs.tail)
+          eq_ge: INSERTION_SORT.insert(x, xs) = whole
+          len_ge: whole.length > 0
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      kept: (INSERTION_SORT.all_ge(lo, xs) and (not x.less_than(lo))) implies INSERTION_SORT.all_ge(lo, INSERTION_SORT.insert(x, xs))
+    end
+
+  insert_sorted(x: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        let empty_list: LIST[K] = LIST.empty
+        let whole: LIST[K] = empty_list.prepend(x)
+        check
+          eq_empty: INSERTION_SORT.insert(x, xs) = whole
+          len_empty: whole.length = 1
+          res_sorted_empty: INSERTION_SORT.is_sorted(whole)
+        end
+        True
+      else if x.less_than(xs.head) then
+        let whole: LIST[K] = xs.prepend(x)
+        check
+          tail_ge: INSERTION_SORT.all_ge_weaken(x, xs.head, xs.tail)
+          eq_lt: INSERTION_SORT.insert(x, xs) = whole
+          len_lt: whole.length > 0
+          hd_lt: whole.head = x
+          tl_lt: whole.tail = xs
+          res_sorted_lt: INSERTION_SORT.is_sorted(xs) implies INSERTION_SORT.is_sorted(whole)
+        end
+        True
+      else
+        let ins_tail = INSERTION_SORT.insert(x, xs.tail)
+        let whole = ins_tail.prepend(xs.head)
+        check
+          head_ge: INSERTION_SORT.all_ge_insert(xs.head, x, xs.tail)
+          rest_sorted: INSERTION_SORT.insert_sorted(x, xs.tail)
+          eq_ge: INSERTION_SORT.insert(x, xs) = whole
+          len_ge: whole.length > 0
+          hd_ge: whole.head = xs.head
+          tl_ge: whole.tail = ins_tail
+          res_sorted_ge: INSERTION_SORT.is_sorted(xs) implies INSERTION_SORT.is_sorted(whole)
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      sorted_res: INSERTION_SORT.is_sorted(xs) implies INSERTION_SORT.is_sorted(INSERTION_SORT.insert(x, xs))
+    end
+
+  insert_count(y: K, x: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        let empty_list: LIST[K] = LIST.empty
+        let res: LIST[K] = empty_list.prepend(x)
+        check empty_c: INSERTION_SORT.count_of(y, res) = if y.equals(x) then 1 else 0 end end
+        True
+      else if x.less_than(xs.head) then
+        let res: LIST[K] = xs.prepend(x)
+        check lt_c: INSERTION_SORT.count_of(y, res) = if y.equals(x) then INSERTION_SORT.count_of(y, xs) + 1 else INSERTION_SORT.count_of(y, xs) end end
+        True
+      else
+        let rest = INSERTION_SORT.insert(x, xs.tail)
+        let whole = rest.prepend(xs.head)
+        check
+          rec_c: INSERTION_SORT.insert_count(y, x, xs.tail)
+          whole_eq: INSERTION_SORT.insert(x, xs) = whole
+          head_len: whole.length > 0
+          head_eq: whole.head = xs.head
+          tail_eq: whole.tail = rest
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      count_eq: INSERTION_SORT.count_of(y, INSERTION_SORT.insert(x, xs)) =
+                if y.equals(x) then INSERTION_SORT.count_of(y, xs) + 1 else INSERTION_SORT.count_of(y, xs) end
+    end
+
+  sort_count(y: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        let sorted_tail = INSERTION_SORT.sort(xs.tail)
+        let whole = INSERTION_SORT.insert(xs.head, sorted_tail)
+        check
+          tail_count: INSERTION_SORT.sort_count(y, xs.tail)
+          ins_count: INSERTION_SORT.insert_count(y, xs.head, sorted_tail)
+          eq_sort: INSERTION_SORT.sort(xs) = whole
+        end
+        True
+      end
+    ensure
+      holds: Result
+      preserves_count: INSERTION_SORT.count_of(y, INSERTION_SORT.sort(xs)) = INSERTION_SORT.count_of(y, xs)
+    end
+
+  insert(x: K, xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        LIST.empty.prepend(x)
+      else if x.less_than(xs.head) then
+        xs.prepend(x)
+      else
+        let rest = INSERTION_SORT.insert(x, xs.tail)
+        rest.prepend(xs.head)
+      end end
+    ensure
+      empty_case: xs.length = 0 implies Result = LIST.empty.prepend(x)
+      lt_case: (xs.length > 0 and x.less_than(xs.head)) implies Result = xs.prepend(x)
+      ge_case: (xs.length > 0 and (not x.less_than(xs.head))) implies Result = INSERTION_SORT.insert(x, xs.tail).prepend(xs.head)
+      same_len: Result.length = xs.length + 1
+    end
+
+  sort(xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        LIST.empty
+      else
+        let sorted_tail = INSERTION_SORT.sort(xs.tail)
+        check
+          keeps_sorted: INSERTION_SORT.insert_sorted(xs.head, sorted_tail)
+        end
+        INSERTION_SORT.insert(xs.head, sorted_tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = LIST.empty
+      cons_case: xs.length > 0 implies Result = INSERTION_SORT.insert(xs.head, INSERTION_SORT.sort(xs.tail))
+      sorted: INSERTION_SORT.is_sorted(Result)
+      same_len: Result.length = xs.length
+    end
+
+end
