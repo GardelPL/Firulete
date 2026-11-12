@@ -17,10 +17,11 @@ Firulete treats the AutoCLRS catalog as a prioritized roadmap—not a line-by-li
 | :--- | :--- | :--- | :--- |
 | 1 | `INSERTION_SORT[K: ORD]` (`src/insertion_sort.gdl`) | Sortedness (`is_sorted`), length preservation, multiset preservation (`sort_count`) | Verified (`--strict`) |
 | 2 | `BINARY_SEARCH[K: ORD]` (`src/binary_search.gdl`) | Bounds safety (`lo + (hi - lo) / 2`), found index matches target, `None` implies target absent | Verified (`--strict`) |
-| 3 | `BOUNDED_QUEUE[A]` / `BINARY_HEAP[K: ORD]` | FIFO / heap-order invariants, size preservation, extract-min correctness | Planned |
+| 3 | `BINARY_HEAP[K: ORD]` (`src/binary_heap.gdl`) | Persistent heap-ordered binary tree with skew-heap `merge`: heap order kept by `insert` / `merge` / `delete_min` / `from_list`, ghost `size` and `count_of` bookkeeping (`delete_min` removes exactly one minimum); `find_min` least under congruence | Verified (`--strict`) |
+| 3b | `BOUNDED_QUEUE[A]` | FIFO invariants, size preservation | Planned |
 | 4 | `MAX_SUBARRAY` | Divide-and-conquer or Kadane sum >= every contiguous slice, witness bounds | Planned |
 | 5 | `MERGE_SORT[K: ORD]` (`src/merge_sort.gdl`) | Adjacent sortedness, length and multiset preservation (`forall y` counts, in `sort`'s own contract); full `INSERTION_SORT.is_sorted` under `equals`/`less_than` congruence | Verified (`--strict`) |
-| 6 | `QUICKSORT[K: ORD]` | Sortedness + multiset preservation on `LIST` | Planned |
+| 6 | `QUICKSORT[K: ORD]` (`src/quicksort.gdl`) | Full `INSERTION_SORT.is_sorted` for **every** `ORD` (no congruence needed), length and multiset preservation (`forall y` counts) in `sort`'s own contract | Verified (`--strict`) |
 
 ## Verifying and Running Tests
 
@@ -69,6 +70,9 @@ tests/
     insertion_sort_test.gdl   # functions INSERTION_SORT_TEST: spec_* + run
     binary_search_test.gdl    # functions BINARY_SEARCH_TEST: spec_* + run
     merge_sort_test.gdl       # functions MERGE_SORT_TEST: spec_* + run (1500-element cross-check)
+    quicksort_test.gdl        # functions QUICKSORT_TEST: spec_* + run (worst-case ascending input)
+    binary_heap_test.gdl      # functions BINARY_HEAP_TEST: spec_* + run (heapsort drain cross-check)
+    test_data.gdl             # functions TEST_DATA: generated inputs (`scrambled`, `ascending`)
 ```
 
 ### Adding tests for a new algorithm
@@ -92,5 +96,11 @@ Before marking any module complete:
 ## Known Spec Gaps (to revisit)
 
 - `INSERTION_SORT.sort`'s own `ensure` states sortedness and length. Multiset preservation lives in the separate lemma `sort_count`, which a client must call (see `spec_sort_is_permutation`).
-- `MERGE_SORT.sort` proves full sortedness (`INSERTION_SORT.is_sorted`) only under the `equals`/`less_than` congruence hypothesis. Unconditionally it proves `adjacent_sorted`. This is not a proof weakness: the `ORD` laws don't link `equals` to `less_than`, and for a non-congruent `ORD` instance merging two equivalent heads can really produce output where a later element is less than an earlier one. `spec_sorted_i64` shows a client discharging the hypothesis. A future `ORD` law tying `equals` to `less_than` would remove this gap and the one below.
+- `MERGE_SORT.sort` proves full sortedness (`INSERTION_SORT.is_sorted`) only under the `equals`/`less_than` congruence hypothesis. Unconditionally it proves `adjacent_sorted`. This is not a proof weakness: the `ORD` laws don't link `equals` to `less_than`, and for a non-congruent `ORD` instance merging two equivalent heads can really produce output where a later element is less than an earlier one. `spec_sorted_i64` shows a client discharging the hypothesis. A future `ORD` law tying `equals` to `less_than` would remove this gap and the two below.
+- `BINARY_HEAP.find_min` is proved not greater than every element only under the same congruence hypothesis, for the same reason (a root can sit above an "equal" child that has a strictly smaller descendant). Unconditionally, `is_heap` is the local parent/child order. `spec_min_is_least_i64` shows a client discharging the hypothesis.
 - `BINARY_SEARCH`'s completeness clauses take an `equals`/`less_than` congruence hypothesis. A client using them on a concrete list has to state that fact for `I64` and give an `LIST_OPS.at` hint (see `spec_search_concrete`).
+
+## Compiler Limitations Hit (worked around)
+
+- `.equals` on an `OPTION` returned by a generic module's feature (e.g. `heap.find_min.equals(Some(2))`) fails verifier translation (`E0199`, undeclared `fn_equals`). Compare with a `match` helper instead (`BINARY_HEAP_TEST.holds_i64`).
+- A local annotation naming the module's own generic type inside a feature (`let one: BINARY_HEAP[K] = …`) verifies, but breaks the C backend ("used at `K`, which does not satisfy ORD"). Leave the type to inference.

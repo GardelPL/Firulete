@@ -1,0 +1,179 @@
+-- Tests for `BINARY_HEAP[K: ORD]` (`src/binary_heap.gdl`).
+--
+-- Spec tests (`spec_*`) are proved from `BINARY_HEAP`'s public contracts only; run tests (`run`)
+-- execute the compiled code and return 0 or the first failing case. See
+-- `insertion_sort_test.gdl` for the conventions.
+functions BINARY_HEAP_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- From the contracts alone: a heap built by inserts holds what was inserted, and a present
+  -- minimum is one of those elements.
+  spec_insert_concrete: BOOL
+    do
+      let e: BINARY_HEAP[I64] = BINARY_HEAP.empty
+      let h = e.insert(5).insert(2).insert(5)
+      check
+        s1_size: h.size = 3
+        s1_count_5: h.count_of(5) = 2
+        s1_count_2: h.count_of(2) = 1
+        s1_count_7: h.count_of(7) = 0
+        s1_heap: h.is_heap
+        s1_some: h.find_min.is_some
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- `delete_min` removes exactly one occurrence of the minimum and keeps the heap order.
+  spec_delete_min(h: BINARY_HEAP[NAT], y: NAT): BOOL
+    require
+      nonempty: not h.is_empty
+    do
+      True
+    ensure
+      holds: Result
+      one_less: h.delete_min.size = h.size - 1
+      count_kept: h.count_of(y) =
+        h.delete_min.count_of(y) + (if y.equals(h.find_min.get) then 1 else 0 end)
+      heap_kept: h.is_heap implies h.delete_min.is_heap
+    end
+
+  -- A heap built from a list holds exactly the list's elements (bridging to the list specs).
+  spec_from_list(xs: LIST[NAT], y: NAT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      sizes: BINARY_HEAP.from_list(xs).size = xs.length
+      counts: BINARY_HEAP.from_list(xs).count_of(y) = INSERTION_SORT.count_of(y, xs)
+      heap: BINARY_HEAP.from_list(xs).is_heap
+    end
+
+  -- At `I64` the congruence hypothesis holds, so the minimum is below every element.
+  spec_min_is_least_i64(h: BINARY_HEAP[I64]): BOOL
+    require
+      heap: h.is_heap
+      nonempty: not h.is_empty
+    do
+      check
+        s4_congruent: forall a: I64. (a.equals(a) implies
+          (forall b: I64. (b.equals(b) implies
+            (forall c: I64.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))
+      end
+      True
+    ensure
+      holds: Result
+      least: h.bounded_below(h.find_min.get)
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- Up to `n` minima of `h`, in the order `find_min` / `delete_min` yield them (heapsort).
+  drain_i64(h: BINARY_HEAP[I64], n: NAT): LIST[I64]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match h.find_min
+          case None then LIST.empty
+          case Some(m) then
+            let rest = BINARY_HEAP_TEST.drain_i64(h.delete_min, n - 1)
+            rest.prepend(m)
+        end
+      end
+    end
+
+  drain_nat(h: BINARY_HEAP[NAT], n: NAT): LIST[NAT]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match h.find_min
+          case None then LIST.empty
+          case Some(m) then
+            let rest = BINARY_HEAP_TEST.drain_nat(h.delete_min, n - 1)
+            rest.prepend(m)
+        end
+      end
+    end
+
+  drain_str(h: BINARY_HEAP[STRING], n: NAT): LIST[STRING]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match h.find_min
+          case None then LIST.empty
+          case Some(m) then
+            let rest = BINARY_HEAP_TEST.drain_str(h.delete_min, n - 1)
+            rest.prepend(m)
+        end
+      end
+    end
+
+  -- `o` holds `v`. (Compares by `match`: `.equals` on an `OPTION` returned by a generic
+  -- module's feature currently fails to translate for the verifier, E0199 `fn_equals`.)
+  holds_i64(o: OPTION[I64], v: I64): BOOL
+    do
+      match o
+        case None then False
+        case Some(x) then x = v
+      end
+    end
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let he: BINARY_HEAP[I64] = BINARY_HEAP.empty
+      let h1 = he.insert(5).insert(2).insert(8).insert(2)
+      let h1_exp = e.prepend(8).prepend(5).prepend(2).prepend(2)
+      let dup_in = e.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let h_dup = BINARY_HEAP.from_list(dup_in)
+      let dup_exp = e.prepend(3).prepend(3).prepend(2).prepend(0).prepend(-1).prepend(-1)
+      let ha = BINARY_HEAP.from_list(e.prepend(9).prepend(1).prepend(4))
+      let hb = BINARY_HEAP.from_list(e.prepend(3).prepend(7))
+      let m_exp = e.prepend(9).prepend(7).prepend(4).prepend(3).prepend(1)
+      let ext = BINARY_HEAP.from_list(e.prepend(-9223372036854775808).prepend(9223372036854775807))
+      let ext_exp = e.prepend(9223372036854775807).prepend(-9223372036854775808)
+      let es: LIST[STRING] = LIST.empty
+      let str_in = es.prepend("b").prepend("delta").prepend("c").prepend("a").prepend("alpha")
+      let str_exp = es.prepend("delta").prepend("c").prepend("b").prepend("alpha").prepend("a")
+      -- 1500 values with repeats: draining the heap must give the sorted list.
+      let big = TEST_DATA.scrambled(1500)
+      let big_drain = BINARY_HEAP_TEST.drain_nat(BINARY_HEAP.from_list(big), 2000)
+      let big_sorted = QUICKSORT.sort(big)
+
+      if not he.is_empty then 1
+      else if not he.find_min.is_none then 2
+      else if not he.delete_min.is_empty then 3
+      else if he.insert(1).is_empty then 4
+      else if not BINARY_HEAP_TEST.holds_i64(h1.find_min, 2) then 5
+      else if not BINARY_HEAP_TEST.holds_i64(h1.delete_min.find_min, 2) then 6
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_i64(h1, 10), h1_exp) then 7
+      else if not BINARY_HEAP_TEST.holds_i64(h_dup.find_min, -1) then 8
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_i64(h_dup, 10), dup_exp) then 9
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_i64(BINARY_HEAP.merge(ha, hb), 10), m_exp) then 10
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_i64(BINARY_HEAP.merge(he, hb), 10),
+                                 BINARY_HEAP_TEST.drain_i64(hb, 10)) then 11
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_i64(ext, 10), ext_exp) then 12
+      else if not TEST_LIST.same(BINARY_HEAP_TEST.drain_str(BINARY_HEAP.from_list(str_in), 10), str_exp) then 13
+      else if big_drain.length != 1500 then 14
+      else if not TEST_LIST.same(big_drain, big_sorted) then 15
+      else if BINARY_HEAP_TEST.drain_i64(h1, 2).length != 2 then 16
+      else 0
+      end end end end end end end end end end end end end end end end
+    end
+
+end

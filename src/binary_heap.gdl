@@ -1,0 +1,303 @@
+-- Verified generic min-heap (`K: ORD`) as a heap-ordered binary tree, in idiomatic, pure, total
+-- Gardel. Algorithm: priority queue on a binary heap (CLRS ch. 6). The array heap of CLRS needs
+-- in-place updates; this persistent version keeps the heap order on a binary tree and does every
+-- update by a skew-heap `merge` (insert = merge a singleton, delete_min = merge the children).
+--
+-- Proves, for every `K: ORD`:
+--   1. Heap order (`is_heap`: no child's root is less than its parent's), kept by every operation.
+--   2. Multiset preservation through the ghost `count_of`: `insert` adds one `x`, `merge` adds the
+--      counts, `delete_min` removes exactly one occurrence of `find_min`, `from_list` holds the
+--      list's elements; `find_min` is an element of the heap.
+--   3. Size bookkeeping through the ghost `size`, and termination of every routine.
+-- and, whenever `K`'s `equals` is congruent with `less_than` (true for `I64`, `NAT`, `CHAR`,
+-- `STRING`): no element is less than `find_min` (`bounded_below`).
+-- As in `MERGE_SORT`, the last property cannot be unconditional: with an `equals` that is not
+-- congruent, a root may sit above an "equal" child root that has a strictly smaller descendant.
+--
+-- Not proved: the amortized O(log n) cost of skew-heap merging.
+module BINARY_HEAP[K: ORD]
+
+representation {NONE}
+  | Empty
+  | Node(left: BINARY_HEAP[K], value: K, right: BINARY_HEAP[K])
+
+specify {ANY}
+
+  size: MATH_INT
+    variant
+      Current
+    do
+      match Current
+        case Empty then 0
+        case Node(l, _, r) then l.size + r.size + 1
+      end
+    ensure
+      non_negative: Result >= 0
+    end
+
+  count_of(y: K): MATH_INT
+    variant
+      Current
+    do
+      match Current
+        case Empty then 0
+        case Node(l, v, r) then
+          l.count_of(y) + r.count_of(y) + (if y.equals(v) then 1 else 0 end)
+      end
+    ensure
+      non_negative: Result >= 0
+    end
+
+  -- Heap order: no child's root is strictly less than its parent's root.
+  is_heap: BOOL
+    variant
+      Current
+    do
+      match Current
+        case Empty then True
+        case Node(l, v, r) then
+          BINARY_HEAP.root_ok(v, l) and BINARY_HEAP.root_ok(v, r) and l.is_heap and r.is_heap
+      end
+    end
+
+  -- No element is strictly less than `lo`.
+  bounded_below(lo: K): BOOL
+    variant
+      Current
+    do
+      match Current
+        case Empty then True
+        case Node(l, v, r) then
+          (not v.less_than(lo)) and l.bounded_below(lo) and r.bounded_below(lo)
+      end
+    end
+
+  -- The root is not greater than any element.
+  root_is_least: BOOL
+    do
+      match Current
+        case Empty then True
+        case Node(_, v, _) then Current.bounded_below(v)
+      end
+    end
+
+create {ANY}
+
+  empty: BINARY_HEAP[K]
+    do
+      Empty
+    ensure
+      is_empty: Result.is_empty
+      no_elements: Result.size = 0
+      no_count: forall y: K. Result.count_of(y) = 0
+      heap: Result.is_heap
+    end
+
+  -- A heap holding the elements of `xs`.
+  from_list(xs: LIST[K]): BINARY_HEAP[K]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        Empty
+      else
+        let rest = BINARY_HEAP.from_list(xs.tail)
+        rest.insert(xs.head)
+      end
+    ensure
+      sizes: Result.size = xs.length
+      counts: forall y: K. Result.count_of(y) = INSERTION_SORT.count_of(y, xs)
+      heap: Result.is_heap
+    end
+
+  -- `t` is empty or its root is not less than `v`.
+  root_ok(v: K, t: BINARY_HEAP[K]): BOOL
+    do
+      match t
+        case Empty then True
+        case Node(_, m, _) then not m.less_than(v)
+      end
+    end
+
+  -- Skew-heap merge: the smaller root stays on top, the merged subtree goes left.
+  merge(a: BINARY_HEAP[K], b: BINARY_HEAP[K]): BINARY_HEAP[K]
+    variant
+      a, b
+    do
+      match a
+        case Empty then b
+        case Node(l1, v1, r1) then
+          match b
+            case Empty then a
+            case Node(l2, v2, r2) then
+              if v2.less_than(v1) then
+                let m = BINARY_HEAP.merge(a, r2)
+                Node(m, v2, l2)
+              else
+                let m = BINARY_HEAP.merge(r1, b)
+                Node(m, v1, l1)
+              end
+          end
+      end
+    ensure
+      sizes: Result.size = a.size + b.size
+      counts: forall y: K. Result.count_of(y) = a.count_of(y) + b.count_of(y)
+      heap: (a.is_heap and b.is_heap) implies Result.is_heap
+      root_bound: forall q: K. (BINARY_HEAP.root_ok(q, a) and BINARY_HEAP.root_ok(q, b)) implies
+        BINARY_HEAP.root_ok(q, Result)
+    end
+
+feature {ANY}
+
+  is_empty: BOOL
+    do
+      match Current
+        case Empty then True
+        case Node(_, _, _) then False
+      end
+    ensure
+      no_size: Result = (Current.size = 0)
+    end
+
+  insert(x: K): BINARY_HEAP[K]
+    do
+      BINARY_HEAP.merge(Node(Empty, x, Empty), Current)
+    ensure
+      sizes: Result.size = Current.size + 1
+      counts: forall y: K. Result.count_of(y) = Current.count_of(y) + (if y.equals(x) then 1 else 0 end)
+      heap: Current.is_heap implies Result.is_heap
+      not_empty: not Result.is_empty
+    end
+
+  -- The minimum (the root), or `None` for the empty heap.
+  find_min: OPTION[K]
+    do
+      match Current
+        case Empty then None
+        case Node(_, v, _) then
+          check
+            refl_root: v.equals(v)
+            f_least: Current.least_lemma
+          end
+          Some(v)
+      end
+    ensure
+      none_iff_empty: Result.is_none = Current.is_empty
+      present: Result.is_some implies Current.count_of(Result.get) >= 1
+      least: ((forall a: K. (a.equals(a) implies
+            (forall b: K. (b.equals(b) implies
+              (forall c: K.
+                ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+                ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and
+              Current.is_heap and Result.is_some) implies Current.bounded_below(Result.get)
+    end
+
+  -- The heap without one occurrence of its minimum (the empty heap stays empty).
+  delete_min: BINARY_HEAP[K]
+    do
+      match Current
+        case Empty then Current
+        case Node(l, _, r) then BINARY_HEAP.merge(l, r)
+      end
+    ensure
+      empty_case: Current.is_empty implies Result.is_empty
+      sizes: (not Current.is_empty) implies Result.size = Current.size - 1
+      counts: (not Current.is_empty) implies
+        (forall y: K. Current.count_of(y) =
+          Result.count_of(y) + (if y.equals(Current.find_min.get) then 1 else 0 end))
+      heap: Current.is_heap implies Result.is_heap
+    end
+
+
+feature {NONE}
+
+  -- Under congruence, `not y < x` and every element `>= y` give every element `>= x`.
+  lower(x: K, y: K): BOOL
+    variant
+      Current
+    do
+      match Current
+        case Empty then True
+        case Node(l, v, r) then
+          check
+            rec_l: l.lower(x, y)
+            rec_r: r.lower(x, y)
+            refl_v: v.equals(v)
+            refl_x: x.equals(x)
+            cmp: x.less_than(y) or x.equals(y) or y.less_than(x)
+            via_lt: (x.less_than(y) and v.less_than(x)) implies v.less_than(y)
+          end
+          True
+      end
+    ensure
+      holds: Result
+      lowered: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and
+                (not y.less_than(x)) and Current.bounded_below(y)) implies Current.bounded_below(x)
+    end
+
+  -- Under congruence, a heap's root is not greater than any of its elements.
+  least_lemma: BOOL
+    variant
+      Current
+    do
+      match Current
+        case Empty then True
+        case Node(l, v, r) then
+          check
+            rec_ll: l.least_lemma
+            rec_rl: r.least_lemma
+            low_l: l.lower_root(v)
+            low_r: r.lower_root(v)
+            not_self: not v.less_than(v)
+            unfold_heap: Current.is_heap implies
+              (BINARY_HEAP.root_ok(v, l) and BINARY_HEAP.root_ok(v, r) and l.is_heap and r.is_heap)
+            step_l: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.is_heap) implies l.bounded_below(v)
+            step_r: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.is_heap) implies r.bounded_below(v)
+            unfold_least: Current.root_is_least = Current.bounded_below(v)
+            unfold_bound: Current.bounded_below(v) =
+              ((not v.less_than(v)) and l.bounded_below(v) and r.bounded_below(v))
+          end
+          True
+      end
+    ensure
+      holds: Result
+      least: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.is_heap) implies Current.root_is_least
+    end
+
+  -- `lower` applied at this heap's own root: if the root is `>= v` and the root is least,
+  -- every element is `>= v`.
+  lower_root(v: K): BOOL
+    do
+      match Current
+        case Empty then True
+        case Node(_, w, _) then
+          check low: Current.lower(v, w) end
+          True
+      end
+    ensure
+      holds: Result
+      lowered: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and BINARY_HEAP.root_ok(v, Current) and Current.root_is_least) implies
+        Current.bounded_below(v)
+    end
+
+end

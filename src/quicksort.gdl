@@ -1,0 +1,251 @@
+-- Verified generic quicksort over `LIST[K]` (`K: ORD`) in idiomatic, pure, total Gardel.
+-- Algorithm: quicksort (CLRS ch. 7) with the head as pivot. The tail is partitioned, keeping
+-- order, into the elements strictly below the pivot and the rest, which are sorted recursively
+-- and joined as `sort(below) ++ [pivot] ++ sort(at_or_above)`.
+--
+-- Proves, for every `K: ORD` (no congruence hypothesis needed; compare `MERGE_SORT`):
+--   1. Sortedness: `INSERTION_SORT.is_sorted(Result)`.
+--   2. Multiset preservation: `forall y. count_of(y, Result) = count_of(y, xs)`.
+--   3. Length preservation and termination (`variant xs.length`).
+-- Sortedness needs only strict transitivity: everything left of the pivot is `< pivot`, and
+-- nothing right of it is, so no right element can be below a left one.
+--
+-- Not proved: the expected O(n log n) cost. With the head as pivot, sorted input costs O(n^2).
+module QUICKSORT[K: ORD]
+
+create {ANY}
+
+  -- Every element of `xs` is strictly less than `hi`.
+  all_lt(hi: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        xs.head.less_than(hi) and QUICKSORT.all_lt(hi, xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result
+      cons_case: xs.length > 0 implies
+        (Result = (xs.head.less_than(hi) and QUICKSORT.all_lt(hi, xs.tail)))
+    end
+
+  -- The elements of `xs` strictly below `p`, in their original order.
+  below(p: K, xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        xs
+      else
+        let rest = QUICKSORT.below(p, xs.tail)
+        if xs.head.less_than(p) then rest.prepend(xs.head) else rest end
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = xs
+      keep_case: (xs.length > 0 and xs.head.less_than(p)) implies
+        Result = QUICKSORT.below(p, xs.tail).prepend(xs.head)
+      drop_case: (xs.length > 0 and not xs.head.less_than(p)) implies Result = QUICKSORT.below(p, xs.tail)
+      not_longer: Result.length <= xs.length
+      bounded: QUICKSORT.all_lt(p, Result)
+      keeps_lt: forall q: K. QUICKSORT.all_lt(q, xs) implies QUICKSORT.all_lt(q, Result)
+      keeps_ge: forall q: K. INSERTION_SORT.all_ge(q, xs) implies INSERTION_SORT.all_ge(q, Result)
+    end
+
+  -- The elements of `xs` not below `p`, in their original order.
+  at_or_above(p: K, xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        xs
+      else
+        let rest = QUICKSORT.at_or_above(p, xs.tail)
+        if xs.head.less_than(p) then rest else rest.prepend(xs.head) end
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = xs
+      keep_case: (xs.length > 0 and not xs.head.less_than(p)) implies
+        Result = QUICKSORT.at_or_above(p, xs.tail).prepend(xs.head)
+      drop_case: (xs.length > 0 and xs.head.less_than(p)) implies Result = QUICKSORT.at_or_above(p, xs.tail)
+      not_longer: Result.length <= xs.length
+      bounded: INSERTION_SORT.all_ge(p, Result)
+      keeps_lt: forall q: K. QUICKSORT.all_lt(q, xs) implies QUICKSORT.all_lt(q, Result)
+      keeps_ge: forall q: K. INSERTION_SORT.all_ge(q, xs) implies INSERTION_SORT.all_ge(q, Result)
+    end
+
+  sort(xs: LIST[K]): LIST[K]
+    variant
+      xs.length, 0
+    do
+      if xs.length = 0 then
+        xs
+      else
+        let h = xs.head
+        let t = xs.tail
+        let lo = QUICKSORT.below(h, t)
+        let hi = QUICKSORT.at_or_above(h, t)
+        let sl = QUICKSORT.sort(lo)
+        let sg = QUICKSORT.sort(hi)
+        let right = sg.prepend(h)
+        let res = sl.append(right)
+        check
+          q_split: QUICKSORT.partition_parts(h, t)
+          q_count_append: QUICKSORT.count_append(sl, right)
+          q_lo_bounds: QUICKSORT.sort_bounds(h, lo)
+          q_hi_bounds: QUICKSORT.sort_bounds(h, hi)
+          q_not_self: not h.less_than(h)
+          q_sorted: QUICKSORT.sorted_concat(h, sl, right)
+        end
+        res
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = xs
+      cons_case: xs.length > 0 implies
+        Result = QUICKSORT.sort(QUICKSORT.below(xs.head, xs.tail)).append(
+                   QUICKSORT.sort(QUICKSORT.at_or_above(xs.head, xs.tail)).prepend(xs.head))
+      same_len: Result.length = xs.length
+      sorted: INSERTION_SORT.is_sorted(Result)
+      permutation: forall y: K. INSERTION_SORT.count_of(y, Result) = INSERTION_SORT.count_of(y, xs)
+    end
+
+create {NONE}
+
+  -- Sorting keeps an upper bound `all_lt(q, _)` and a lower bound `all_ge(q, _)`. Stated per `q`
+  -- (not `forall q` in `sort`'s contract, which sends the solver into a matching loop); its
+  -- variant lets `sort` call it on strictly shorter partitions while it mentions `sort(ys)`.
+  sort_bounds(q: K, ys: LIST[K]): BOOL
+    variant
+      ys.length, 1
+    do
+      if ys.length = 0 then
+        True
+      else
+        let h = ys.head
+        let t = ys.tail
+        let lo = QUICKSORT.below(h, t)
+        let hi = QUICKSORT.at_or_above(h, t)
+        let sl = QUICKSORT.sort(lo)
+        let sg = QUICKSORT.sort(hi)
+        let right = sg.prepend(h)
+        check
+          b_rec_lo: QUICKSORT.sort_bounds(q, lo)
+          b_rec_hi: QUICKSORT.sort_bounds(q, hi)
+          b_shape: QUICKSORT.sort(ys) = sl.append(right)
+          b_lt_append: QUICKSORT.all_lt_append(sl, right)
+          b_ge_append: QUICKSORT.all_ge_append(sl, right)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      keeps_lt: QUICKSORT.all_lt(q, ys) implies QUICKSORT.all_lt(q, QUICKSORT.sort(ys))
+      keeps_ge: INSERTION_SORT.all_ge(q, ys) implies INSERTION_SORT.all_ge(q, QUICKSORT.sort(ys))
+    end
+
+  -- Partitioning keeps every element and the total length.
+  partition_parts(p: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        check rec_parts: QUICKSORT.partition_parts(p, xs.tail) end
+        True
+      end
+    ensure
+      holds: Result
+      parts_len: QUICKSORT.below(p, xs).length + QUICKSORT.at_or_above(p, xs).length = xs.length
+      parts_count: forall y: K.
+        INSERTION_SORT.count_of(y, QUICKSORT.below(p, xs)) + INSERTION_SORT.count_of(y, QUICKSORT.at_or_above(p, xs)) =
+        INSERTION_SORT.count_of(y, xs)
+    end
+
+  all_lt_append(a: LIST[K], c: LIST[K]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        let rest = a.tail.append(c)
+        check
+          rec_lt: QUICKSORT.all_lt_append(a.tail, c)
+          shape_lt: a.append(c) = rest.prepend(a.head)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      joined: forall q: K. (QUICKSORT.all_lt(q, a) and QUICKSORT.all_lt(q, c)) implies
+        QUICKSORT.all_lt(q, a.append(c))
+    end
+
+  all_ge_append(a: LIST[K], c: LIST[K]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        let rest = a.tail.append(c)
+        check
+          rec_ge: QUICKSORT.all_ge_append(a.tail, c)
+          shape_ge: a.append(c) = rest.prepend(a.head)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      joined: forall q: K. (INSERTION_SORT.all_ge(q, a) and INSERTION_SORT.all_ge(q, c)) implies
+        INSERTION_SORT.all_ge(q, a.append(c))
+    end
+
+  count_append(a: LIST[K], c: LIST[K]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        let rest = a.tail.append(c)
+        check
+          rec_count: QUICKSORT.count_append(a.tail, c)
+          shape_count: a.append(c) = rest.prepend(a.head)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      joined: forall y: K.
+        INSERTION_SORT.count_of(y, a.append(c)) = INSERTION_SORT.count_of(y, a) + INSERTION_SORT.count_of(y, c)
+    end
+
+  -- A sorted list below `p` followed by a sorted list not below `p` is sorted.
+  sorted_concat(p: K, a: LIST[K], c: LIST[K]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        let x = a.head
+        let rest = a.tail.append(c)
+        check
+          rec_sorted: QUICKSORT.sorted_concat(p, a.tail, c)
+          shape: a.append(c) = rest.prepend(x)
+          lowered: INSERTION_SORT.all_ge_weaken(x, p, c)
+          ge_join: QUICKSORT.all_ge_append(a.tail, c)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      sorted_join: (INSERTION_SORT.is_sorted(a) and INSERTION_SORT.is_sorted(c) and
+                    QUICKSORT.all_lt(p, a) and INSERTION_SORT.all_ge(p, c)) implies
+        INSERTION_SORT.is_sorted(a.append(c))
+    end
+
+end

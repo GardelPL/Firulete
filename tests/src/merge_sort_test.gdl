@@ -65,21 +65,6 @@ feature {ANY}
 
   -- ---------------------------------------------------------------- run tests (executed)
 
-  -- `n` values in `[0, 1009)` in scrambled order, with repeats once `n > 1009`.
-  scrambled(n: NAT): LIST[NAT]
-    require
-      small: n <= 1000000
-    variant
-      n
-    do
-      if n = 0 then
-        LIST.empty
-      else
-        let rest = MERGE_SORT_TEST.scrambled(n - 1)
-        rest.prepend((n * 7919) % 1009)
-      end
-    end
-
   run: NAT
     do
       let e: LIST[I64] = LIST.empty
@@ -99,7 +84,7 @@ feature {ANY}
       let str_in = es.prepend("b").prepend("delta").prepend("c").prepend("a").prepend("alpha")
       let str_exp = es.prepend("delta").prepend("c").prepend("b").prepend("alpha").prepend("a")
       -- 1500 values with repeats: merge sort must agree with insertion sort.
-      let big = MERGE_SORT_TEST.scrambled(1500)
+      let big = TEST_DATA.scrambled(1500)
       let big_ms = MERGE_SORT.sort(big)
       let big_is = INSERTION_SORT.sort(big)
 
