@@ -29,19 +29,32 @@ Specify and prove full functional correctness, including:
 - **Use `MATH_INT`** for ghost specification counts/sums that are not bounded by 64-bit machine integers; use `lo + (hi - lo) / 2` for midpoint arithmetic on `NAT`/`I64`.
 - **Factor inductive proofs** into separate `BOOL` lemma routines with `ensure holds: Result` and call them in `check <unique_tag>: ... end` blocks (give each `check` item a distinct tag name for precise diagnostics).
 - **For `K: ORD`**: remember `ORD` laws (`irreflexive`, `transitive`, `total`) do not automatically equate `equals` with `less_than` congruence; use strict `x.less_than(y)` / `not y.less_than(x)` carefully as in `INSERTION_SORT`.
+  If a property genuinely needs congruence (e.g. full sortedness after `merge` takes from two equivalent heads), prove an unconditional weaker form (e.g. `adjacent_sorted`) and the full form as `<congruence hypothesis> implies ...`, then record it under README "Known Spec Gaps".
+- **Write quantified hypotheses in guarded form** (as in `BINARY_SEARCH` / `MERGE_SORT`): `forall a: K. (a.equals(a) implies (forall b: K. (b.equals(b) implies (forall c: K. ...))))`. Unguarded nested `forall a. forall b. forall c.` gives Z3 no trigger and cannot be used. To apply the hypothesis to concrete elements `x`, `z`, first state `check refl_x: x.equals(x)  refl_z: z.equals(z) end` so the guards fire.
+- **No parameterless ghost predicates in generic modules**: a `specify` query gets an implicit `Current` argument, and a static query must mention `K` in its arguments (Boogie: "type variable must occur in function arguments"). Inline the formula in each clause instead.
+- **Reuse the shared spec predicates** (`INSERTION_SORT.is_sorted`, `INSERTION_SORT.count_of`) for sorting algorithms, so every sort is specified against the same notion of sortedness and multiset.
 - **Zero `assume` blocks.**
 
+- **Publish `ensure` clauses on every spec predicate** (`count_of`, `is_sorted`, …) that characterize it (empty/cons cases). The test package sees contracts only, so a predicate without them is opaque to every client.
+
+### Tests (see README "Testing Model")
+Create `firulete/tests/src/<module_name>_test.gdl` declaring `functions <MODULE_NAME>_TEST`, with:
+- **Spec tests** (`spec_*`, proved statically from contracts only): a concrete `check` per public routine (e.g. `sort([3,1,2]) = [1,2,3]`) and a universal routine per headline guarantee. If one fails, strengthen the module's contract. Do not weaken the test.
+- **Run tests** (`run: NAT`, returns `0` or the first failing case number): empty, singleton, already-processed input, worst case, duplicates, boundaries, and at least two `K` instantiations.
+- Register the suite in `main` of `firulete/tests/src/firulete_test.gdl`.
+- Check that the tests can fail: break one spec expectation and one run expectation, confirm each fails, then restore them.
+
 ### Verification Loop
-Run:
+Run (from `c:\home\Learn\Gardel`):
 ```powershell
-$env:Z3_EXE = (Resolve-Path gardelc/tools/dafny/z3/bin/z3.exe).Path
-gardelc --project firulete --strict --json-diagnostics
+./firulete/test.ps1 -JsonDiagnostics <module_name>
 ```
-Iterate on counterexamples and failed VCs until the output is `[]` with exit code `0`, and verify `gardelc --project firulete --strict` prints `0 errors, 0 warnings`.
+Iterate on counterexamples and failed VCs until both verification steps print `[]` and the run step prints `PASS <module_name>` with exit code `0`.
 
 ### Deliverable
 1. `firulete/src/<module_name>.gdl`
-2. Update `firulete/README.md` catalog table.
-3. Summarize the proved specification clauses and flag any assumptions or preconditions for human spec review.
+2. `firulete/tests/src/<module_name>_test.gdl`, registered in `firulete_test.gdl`.
+3. Update `firulete/README.md` catalog table (and "Known Spec Gaps" if any).
+4. Summarize the proved specification clauses and flag any assumptions or preconditions for human spec review.
 ```
 

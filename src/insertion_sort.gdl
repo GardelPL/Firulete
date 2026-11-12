@@ -13,6 +13,8 @@ create {ANY}
       end
     ensure
       empty_case: xs.length = 0 implies Result
+      cons_case: xs.length > 0 implies
+        (Result = ((not xs.head.less_than(lo)) and INSERTION_SORT.all_ge(lo, xs.tail)))
     end
 
   is_sorted(xs: LIST[K]): BOOL
@@ -40,6 +42,12 @@ create {ANY}
         let rest = INSERTION_SORT.count_of(x, xs.tail)
         if x.equals(xs.head) then rest + 1 else rest end
       end
+    ensure
+      -- Published so that clients (which see contracts, not bodies) can evaluate counts.
+      empty_case: xs.length = 0 implies Result = 0
+      cons_case: xs.length > 0 implies
+        (Result = (if x.equals(xs.head) then INSERTION_SORT.count_of(x, xs.tail) + 1
+                   else INSERTION_SORT.count_of(x, xs.tail) end))
     end
 
   all_ge_weaken(a: K, b: K, xs: LIST[K]): BOOL

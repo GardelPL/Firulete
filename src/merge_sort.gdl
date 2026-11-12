@@ -1,0 +1,214 @@
+-- Verified generic top-down merge sort over `LIST[K]` (`K: ORD`) in idiomatic, pure, total Gardel.
+-- Algorithm: merge sort (CLRS ch. 2.3); the list is split by alternating positions so that no
+-- index arithmetic is needed, the halves are sorted recursively and merged.
+--
+-- Proves, for every `K: ORD`:
+--   1. `adjacent_sorted(Result)`: no neighbouring pair is inverted.
+--   2. Multiset preservation: `forall y. count_of(y, Result) = count_of(y, xs)`.
+--   3. Length preservation and termination (`variant xs.length`, `a.length + b.length`).
+-- and, whenever `K`'s `equals` is congruent with `less_than` (the quantified hypothesis below, true for `I64`, `NAT`,
+-- `CHAR`, `STRING`), full sortedness in the sense of `INSERTION_SORT.is_sorted`.
+--
+-- The `ORD` laws alone do not give (4) unconditionally: with an `equals` that is not congruent,
+-- `merge` may put an element after an "equal" one that it is strictly less than.
+-- Sortedness and counts reuse `INSERTION_SORT.is_sorted` / `INSERTION_SORT.count_of`, so both
+-- sorts are specified against the same predicates.
+module MERGE_SORT[K: ORD]
+
+create {ANY}
+
+  -- No neighbouring pair of `xs` is inverted.
+  adjacent_sorted(xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length <= 1 then
+        True
+      else
+        (not xs.tail.head.less_than(xs.head)) and MERGE_SORT.adjacent_sorted(xs.tail)
+      end
+    ensure
+      short_case: xs.length <= 1 implies Result
+      cons_case: xs.length > 1 implies
+        (Result = ((not xs.tail.head.less_than(xs.head)) and MERGE_SORT.adjacent_sorted(xs.tail)))
+    end
+
+  -- The elements of `xs` at even positions 0, 2, 4, ...
+  evens(xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length <= 1 then
+        xs
+      else
+        let rest = MERGE_SORT.evens(xs.tail.tail)
+        rest.prepend(xs.head)
+      end
+    ensure
+      short_case: xs.length <= 1 implies Result = xs
+      cons_case: xs.length > 1 implies Result = MERGE_SORT.evens(xs.tail.tail).prepend(xs.head)
+      not_longer: Result.length <= xs.length
+      shorter: xs.length > 1 implies Result.length < xs.length
+    end
+
+  -- The elements of `xs` at odd positions 1, 3, 5, ...
+  odds(xs: LIST[K]): LIST[K]
+    do
+      if xs.length = 0 then
+        xs
+      else
+        MERGE_SORT.evens(xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = xs
+      cons_case: xs.length > 0 implies Result = MERGE_SORT.evens(xs.tail)
+      shorter: xs.length > 0 implies Result.length < xs.length
+    end
+
+  -- Merge two lists, taking the head of `b` only when it is strictly less than the head of `a`.
+  merge(a: LIST[K], b: LIST[K]): LIST[K]
+    variant
+      a.length + b.length
+    do
+      if a.length = 0 then
+        b
+      else if b.length = 0 then
+        a
+      else if b.head.less_than(a.head) then
+        let rest = MERGE_SORT.merge(a, b.tail)
+        check
+          m_head_b: rest.length > 0 implies (rest.head = a.head or (b.tail.length > 0 and rest.head = b.tail.head))
+        end
+        rest.prepend(b.head)
+      else
+        let rest = MERGE_SORT.merge(a.tail, b)
+        rest.prepend(a.head)
+      end end end
+    ensure
+      left_empty: a.length = 0 implies Result = b
+      right_empty: (a.length > 0 and b.length = 0) implies Result = a
+      take_right: (a.length > 0 and b.length > 0 and b.head.less_than(a.head)) implies
+        Result = MERGE_SORT.merge(a, b.tail).prepend(b.head)
+      take_left: (a.length > 0 and b.length > 0 and not b.head.less_than(a.head)) implies
+        Result = MERGE_SORT.merge(a.tail, b).prepend(a.head)
+      same_len: Result.length = a.length + b.length
+      head_from: (a.length > 0 and b.length > 0) implies (Result.head = a.head or Result.head = b.head)
+      keeps_order: (MERGE_SORT.adjacent_sorted(a) and MERGE_SORT.adjacent_sorted(b)) implies
+        MERGE_SORT.adjacent_sorted(Result)
+      keeps_count: forall y: K.
+        INSERTION_SORT.count_of(y, Result) = INSERTION_SORT.count_of(y, a) + INSERTION_SORT.count_of(y, b)
+    end
+
+  sort(xs: LIST[K]): LIST[K]
+    variant
+      xs.length
+    do
+      if xs.length <= 1 then
+        xs
+      else
+        let left = MERGE_SORT.sort(MERGE_SORT.evens(xs))
+        let right = MERGE_SORT.sort(MERGE_SORT.odds(xs))
+        check
+          split_ok: MERGE_SORT.split_parts(xs)
+        end
+        let res = MERGE_SORT.merge(left, right)
+        check
+          full_ok: MERGE_SORT.adjacent_to_sorted(res)
+        end
+        res
+      end
+    ensure
+      short_case: xs.length <= 1 implies Result = xs
+      cons_case: xs.length > 1 implies
+        Result = MERGE_SORT.merge(MERGE_SORT.sort(MERGE_SORT.evens(xs)), MERGE_SORT.sort(MERGE_SORT.odds(xs)))
+      same_len: Result.length = xs.length
+      adjacent: MERGE_SORT.adjacent_sorted(Result)
+      permutation: forall y: K. INSERTION_SORT.count_of(y, Result) = INSERTION_SORT.count_of(y, xs)
+      sorted: (forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) implies INSERTION_SORT.is_sorted(Result)
+    end
+
+create {NONE}
+
+  -- Splitting keeps every element and the total length.
+  split_parts(xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length <= 1 then
+        True
+      else
+        check
+          rec_split: MERGE_SORT.split_parts(xs.tail)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      split_len: MERGE_SORT.evens(xs).length + MERGE_SORT.odds(xs).length = xs.length
+      split_count: forall y: K.
+        INSERTION_SORT.count_of(y, MERGE_SORT.evens(xs)) + INSERTION_SORT.count_of(y, MERGE_SORT.odds(xs)) =
+        INSERTION_SORT.count_of(y, xs)
+    end
+
+  -- Under congruence, `not y < x` and `zs >= y` give `zs >= x`.
+  all_ge_le(x: K, y: K, zs: LIST[K]): BOOL
+    variant
+      zs.length
+    do
+      if zs.length = 0 then
+        True
+      else
+        let z = zs.head
+        check
+          rec_le: MERGE_SORT.all_ge_le(x, y, zs.tail)
+          cmp: x.less_than(y) or x.equals(y) or y.less_than(x)
+          refl_z: z.equals(z)
+          refl_x: x.equals(x)
+          via_lt: (x.less_than(y) and z.less_than(x)) implies z.less_than(y)
+          via_eq: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and
+                   x.equals(y) and z.less_than(x)) implies z.less_than(y)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      lowered: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and (not y.less_than(x)) and INSERTION_SORT.all_ge(y, zs)) implies
+        INSERTION_SORT.all_ge(x, zs)
+    end
+
+  -- Under congruence, adjacent sortedness is full sortedness.
+  adjacent_to_sorted(xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length <= 1 then
+        True
+      else
+        check
+          rec_adj: MERGE_SORT.adjacent_to_sorted(xs.tail)
+          step: MERGE_SORT.all_ge_le(xs.head, xs.tail.head, xs.tail.tail)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      full: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and MERGE_SORT.adjacent_sorted(xs)) implies INSERTION_SORT.is_sorted(xs)
+    end
+
+end

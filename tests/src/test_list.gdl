@@ -1,0 +1,32 @@
+-- Helpers shared by every `*_TEST` suite: element-wise list equality and suite selection.
+module TEST_LIST[A: EQ]
+
+create {ANY}
+
+  -- True when `a` and `b` have the same length and `equals` element by element.
+  same(a: LIST[A], b: LIST[A]): BOOL
+    variant
+      a.length
+    do
+      if a.length != b.length then
+        False
+      else if a.length = 0 then
+        True
+      else
+        a.head.equals(b.head) and TEST_LIST.same(a.tail, b.tail)
+      end end
+    end
+
+  -- True when `name` occurs in `names`.
+  has(names: LIST[A], name: A): BOOL
+    variant
+      names.length
+    do
+      if names.length = 0 then
+        False
+      else
+        names.head.equals(name) or TEST_LIST.has(names.tail, name)
+      end
+    end
+
+end

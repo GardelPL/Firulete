@@ -19,37 +19,65 @@ Firulete treats the AutoCLRS catalog as a prioritized roadmap—not a line-by-li
 | 2 | `BINARY_SEARCH[K: ORD]` (`src/binary_search.gdl`) | Bounds safety (`lo + (hi - lo) / 2`), found index matches target, `None` implies target absent | Verified (`--strict`) |
 | 3 | `BOUNDED_QUEUE[A]` / `BINARY_HEAP[K: ORD]` | FIFO / heap-order invariants, size preservation, extract-min correctness | Planned |
 | 4 | `MAX_SUBARRAY` | Divide-and-conquer or Kadane sum >= every contiguous slice, witness bounds | Planned |
-| 5 | `MERGE_SORT` / `QUICKSORT` | Sortedness + multiset preservation on `SEQ` / `LIST` | Planned |
+| 5 | `MERGE_SORT[K: ORD]` (`src/merge_sort.gdl`) | Adjacent sortedness, length and multiset preservation (`forall y` counts, in `sort`'s own contract); full `INSERTION_SORT.is_sorted` under `equals`/`less_than` congruence | Verified (`--strict`) |
+| 6 | `QUICKSORT[K: ORD]` | Sortedness + multiset preservation on `LIST` | Planned |
 
 ## Verifying and Running Tests
 
 From `c:\home\Learn\Gardel` (auto-discovers the repo's bundled Z3 if `z3` is not on `PATH`):
 
 ```powershell
-./firulete/test.ps1
+./firulete/test.ps1                          # verify library, prove spec tests, run all suites
+./firulete/test.ps1 binary_search            # same, but run only the named suite(s)
+./firulete/test.ps1 -JsonDiagnostics         # machine-readable verifier output for repair loops
 ```
+
+Output is one line per suite (`PASS insertion_sort`, `FAIL binary_search (case 7)`, `SKIP …`). Exit code `0` means everything passed, `1` means a suite failed, and `2` means no suite matched the filter. Any verification failure stops the script with the verifier's exit code.
 
 Or run `gardelc` directly once `z3` is on `PATH` (or `Z3_EXE` is set):
 
 ```powershell
-# Add the bundled Z3 directory to PATH for this session:
-$z3Dir = (Resolve-Path gardelc/tools/dafny/z3/bin).Path
-$env:PATH = "$z3Dir;$env:PATH"
-
-# Strict verification of the library (fails on any error, warning, or assume):
-gardelc --project firulete --strict
-
-# Verify and execute the test suite covering all verified algorithms:
-gardelc --project firulete/tests --strict --run
-
-# Machine-readable diagnostics for autonomous AI repair loops:
-gardelc --project firulete --strict --json-diagnostics
-
-# Inspect public contract interface (Eiffel `short` view):
-gardelc --inspect firulete/src/insertion_sort.gdl
+$env:PATH = "$((Resolve-Path gardelc/tools/dafny/z3/bin).Path);$env:PATH"
+gardelc --project firulete --strict                   # the library
+gardelc --project firulete/tests --strict --run       # spec tests + all run tests
+gardelc --inspect firulete/src/insertion_sort.gdl     # public contract (Eiffel `short` view)
 ```
 
-The test harness lives in `tests/` (`Gardel.toml` + `tests/src/firulete_test.gdl`). Every new algorithm module added under `src/` should have corresponding test cases added in `tests/src/firulete_test.gdl`.
+## Testing Model
+
+In a verified library, the proof already shows that the code meets its contract. What it cannot show is whether the contract says what we *meant*. Each algorithm's tests therefore check the contract as well as the code, in two layers.
+
+`tests/` is a separate package that depends on `firulete`, so it **sees only contracts, never bodies**.
+
+| Layer | Where | Checked by | What it catches |
+| :--- | :--- | :--- | :--- |
+| **Spec tests** (`spec_*` routines) | `tests/src/<algo>_test.gdl` | `gardelc --strict` at compile time | Contracts too weak to be useful: a client cannot derive the expected answer from the published `ensure` clauses (e.g. `sort([3,1,2]) = [1,2,3]`, `search` finds a present key), or a helper the spec relies on is opaque |
+| **Run tests** (`run: NAT`) | `tests/src/<algo>_test.gdl` | Native executable (`--run` / `test.ps1`) | Code generation / runtime bugs, unsatisfiable or awkward preconditions, and plain examples for readers |
+
+Spec tests come in two shapes:
+- **Concrete**: `check` that the contract alone determines a specific output. If a contract only promised sortedness (and not the multiset), `spec_sort_concrete` would fail.
+- **Universal**: a `BOOL` routine whose `ensure` restates the guarantee a client needs (e.g. `spec_none_is_absent`: `None` implies the target is at no index). The routine shows that the guarantee can be used from outside the module, including any hints a client must supply.
+
+Layout:
+
+```
+tests/
+  Gardel.toml                 # depends on firulete = { path = ".." }
+  src/
+    firulete_test.gdl         # program FIRULETE_TEST: runs suites, filters by name, reports
+    test_list.gdl             # TEST_LIST[A: EQ]: shared helpers (`same`, `has`)
+    insertion_sort_test.gdl   # functions INSERTION_SORT_TEST: spec_* + run
+    binary_search_test.gdl    # functions BINARY_SEARCH_TEST: spec_* + run
+    merge_sort_test.gdl       # functions MERGE_SORT_TEST: spec_* + run (1500-element cross-check)
+```
+
+### Adding tests for a new algorithm
+
+1. Create `tests/src/<algo>_test.gdl` declaring `functions <ALGO>_TEST`.
+2. Add **spec tests**: at least one concrete `check` per public routine, plus one universal routine per headline guarantee (e.g. sorted **and** permutation; found **and** absent).
+3. Add **run tests** in `run: NAT`: empty, singleton, already-processed input, the worst case (e.g. reverse sorted), duplicates, negatives/boundaries, and at least two `K` instantiations (e.g. `I64` plus `STRING`). Number the cases `1..n` locally and return `0` on success.
+4. Register the suite in `main` of `tests/src/firulete_test.gdl` by adding its `wanted`, `rc`, `failed` and `print_line` lines.
+5. Check that the tests can fail: temporarily break one expected value in a spec test and one in a run test, and confirm that `test.ps1` fails.
 
 ## Spec Review Checklist
 
@@ -57,4 +85,12 @@ Before marking any module complete:
 - Does `ensure` rule out trivial implementations (e.g. returning an empty list for sort, or `None` for search)?
 - Are numeric overflow and division-by-zero checks satisfied without weakening inputs unnaturally?
 - Are all inductive lemmas proved (`check ... end`) with zero `assume` blocks?
-- Does `gardelc --project firulete --strict` exit `0` with `0 errors, 0 warnings`?
+- Does every spec predicate a client needs (e.g. `count_of`, `is_sorted`) carry `ensure` clauses that characterize it? Bodies are invisible to dependents.
+- Do the suite's spec tests prove concrete outputs from the contract alone?
+- Does `./firulete/test.ps1` exit `0`?
+
+## Known Spec Gaps (to revisit)
+
+- `INSERTION_SORT.sort`'s own `ensure` states sortedness and length. Multiset preservation lives in the separate lemma `sort_count`, which a client must call (see `spec_sort_is_permutation`).
+- `MERGE_SORT.sort` proves full sortedness (`INSERTION_SORT.is_sorted`) only under the `equals`/`less_than` congruence hypothesis. Unconditionally it proves `adjacent_sorted`. This is not a proof weakness: the `ORD` laws don't link `equals` to `less_than`, and for a non-congruent `ORD` instance merging two equivalent heads can really produce output where a later element is less than an earlier one. `spec_sorted_i64` shows a client discharging the hypothesis. A future `ORD` law tying `equals` to `less_than` would remove this gap and the one below.
+- `BINARY_SEARCH`'s completeness clauses take an `equals`/`less_than` congruence hypothesis. A client using them on a concrete list has to state that fact for `I64` and give an `LIST_OPS.at` hint (see `spec_search_concrete`).

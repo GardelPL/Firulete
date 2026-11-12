@@ -1,0 +1,138 @@
+-- Tests for `BINARY_SEARCH[K: ORD]` (`src/binary_search.gdl`).
+--
+-- Spec tests (`spec_*`) are proved from `BINARY_SEARCH`'s public contracts only; run tests
+-- (`run`) execute the compiled code and return 0 or the first failing case. See
+-- `insertion_sort_test.gdl` for the conventions.
+functions BINARY_SEARCH_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- Soundness: whatever index `search` returns holds the target.
+  spec_found_is_target(xs: LIST[I64], target: I64): BOOL
+    require
+      sorted: BINARY_SEARCH.is_sorted(xs)
+      fits: xs.length <= 18446744073709551615
+    do
+      True
+    ensure
+      holds: Result
+      sound: BINARY_SEARCH.search(xs, target).is_some implies
+        LIST_OPS.at(xs, BINARY_SEARCH.search(xs, target).get) = target
+    end
+
+  -- Completeness: `None` means the target is at no index. `I64`'s `equals` agrees with
+  -- `less_than`, which discharges the congruence hypothesis of `absent_means_missing`.
+  spec_none_is_absent(xs: LIST[I64], target: I64, i: NAT): BOOL
+    require
+      sorted: BINARY_SEARCH.is_sorted(xs)
+      fits: xs.length <= 18446744073709551615
+      in_bounds: i < xs.length
+      not_found: BINARY_SEARCH.search(xs, target).is_none
+    do
+      True
+    ensure
+      holds: Result
+      missing: LIST_OPS.at(xs, i) != target
+    end
+
+  -- The same completeness guarantee, instantiated at `STRING`.
+  spec_none_is_absent_str(xs: LIST[STRING], target: STRING, i: NAT): BOOL
+    require
+      sorted: BINARY_SEARCH.is_sorted(xs)
+      fits: xs.length <= 18446744073709551615
+      in_bounds: i < xs.length
+      not_found: BINARY_SEARCH.search(xs, target).is_none
+    do
+      True
+    ensure
+      holds: Result
+      missing: not LIST_OPS.at(xs, i).equals(target)
+    end
+
+  -- The contract alone decides a concrete search, both ways: a present key is found and an
+  -- absent key is not. A client states the congruence fact for `I64` and one `at` step.
+  spec_search_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let arr = e.prepend(9).prepend(5).prepend(1)
+      check
+        s1_sorted: BINARY_SEARCH.is_sorted(arr)
+        s1_congruent: forall a: I64. (a.equals(a) implies
+          (forall b: I64. (b.equals(b) implies
+            (forall c: I64.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))
+        s1_at: LIST_OPS.at(arr, 1) = 5
+        s1_found: BINARY_SEARCH.contains(arr, 5)
+        s1_absent: not BINARY_SEARCH.contains(arr, 4)
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let one = e.prepend(42)
+      let exp_0: OPTION[NAT] = Some(0)
+      let exp_3: OPTION[NAT] = Some(3)
+      let exp_7: OPTION[NAT] = Some(7)
+      -- [-10, -3, -3, 0, 5, 12, 12, 99]
+      let arr = e.prepend(99).prepend(12).prepend(12).prepend(5).prepend(0).prepend(-3).prepend(-3).prepend(-10)
+      -- Composition with INSERTION_SORT: its `sorted` contract meets our `sorted` precondition.
+      let unsorted = e.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let sorted = INSERTION_SORT.sort(unsorted)
+      let en: LIST[NAT] = LIST.empty
+      let nat_sorted = INSERTION_SORT.sort(en.prepend(1).prepend(5).prepend(1).prepend(9))
+      let nat_exp_2: OPTION[NAT] = Some(2)
+      let nat_exp_3: OPTION[NAT] = Some(3)
+      -- ["alpha", "beta", "gamma", "gamma", "zeta"]
+      let es: LIST[STRING] = LIST.empty
+      let str_arr = es.prepend("zeta").prepend("gamma").prepend("gamma").prepend("beta").prepend("alpha")
+      let str_exp_0: OPTION[NAT] = Some(0)
+      let str_exp_1: OPTION[NAT] = Some(1)
+      let str_exp_4: OPTION[NAT] = Some(4)
+
+      if not BINARY_SEARCH.search(e, 7).is_none then 1
+      else if BINARY_SEARCH.contains(e, 7) then 2
+      else if not BINARY_SEARCH.search(one, 42).equals(exp_0) then 3
+      else if not BINARY_SEARCH.search(one, 41).is_none then 4
+      else if not BINARY_SEARCH.search(one, 43).is_none then 5
+      else if not BINARY_SEARCH.is_sorted(arr) then 6
+      else if not BINARY_SEARCH.search(arr, -10).equals(exp_0) then 7
+      else if not BINARY_SEARCH.search(arr, 99).equals(exp_7) then 8
+      else if not BINARY_SEARCH.contains(arr, -3) then 9
+      else if not BINARY_SEARCH.contains(arr, 12) then 10
+      else if not BINARY_SEARCH.search(arr, -11).is_none then 11
+      else if not BINARY_SEARCH.search(arr, 1).is_none then 12
+      else if not BINARY_SEARCH.search(arr, 100).is_none then 13
+      else if BINARY_SEARCH.contains(arr, 1) then 14
+      else if not BINARY_SEARCH.search_range(arr, 0, 3, 3).is_none then 15
+      else if not BINARY_SEARCH.search_range(arr, 0, 2, 6).equals(exp_3) then 16
+      else if not BINARY_SEARCH.search_range(arr, -10, 2, 6).is_none then 17
+      else if not BINARY_SEARCH.search_range(arr, 99, 2, 6).is_none then 18
+      else if not BINARY_SEARCH.is_sorted(sorted) then 19
+      else if not BINARY_SEARCH.contains(sorted, -1) then 20
+      else if not BINARY_SEARCH.contains(sorted, 3) then 21
+      else if not BINARY_SEARCH.search(sorted, 4).is_none then 22
+      else if not BINARY_SEARCH.contains(nat_sorted, 1) then 23
+      else if not BINARY_SEARCH.search(nat_sorted, 5).equals(nat_exp_2) then 24
+      else if not BINARY_SEARCH.search(nat_sorted, 9).equals(nat_exp_3) then 25
+      else if not BINARY_SEARCH.search(nat_sorted, 4).is_none then 26
+      else if not BINARY_SEARCH.is_sorted(str_arr) then 27
+      else if not BINARY_SEARCH.search(str_arr, "alpha").equals(str_exp_0) then 28
+      else if not BINARY_SEARCH.search(str_arr, "beta").equals(str_exp_1) then 29
+      else if not BINARY_SEARCH.contains(str_arr, "gamma") then 30
+      else if not BINARY_SEARCH.search(str_arr, "zeta").equals(str_exp_4) then 31
+      else if not BINARY_SEARCH.search(str_arr, "delta").is_none then 32
+      else if BINARY_SEARCH.contains(str_arr, "omega") then 33
+      else 0
+      end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end end
+    end
+
+end

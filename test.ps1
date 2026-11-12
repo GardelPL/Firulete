@@ -1,6 +1,15 @@
-# Verify `firulete` and run `firulete/tests` with automatic Z3 discovery.
+# Verify `firulete`, prove the spec tests in `firulete/tests`, then run the run tests.
+#
+#   ./firulete/test.ps1                                # all suites
+#   ./firulete/test.ps1 insertion_sort binary_search   # only the named suites
+#   ./firulete/test.ps1 -JsonDiagnostics               # machine-readable verifier output
+#
+# Spec tests are always proved for every suite (the verifier checks the whole package); the
+# suite names only filter which run tests execute.
 param(
-    [switch]$JsonDiagnostics
+    [switch]$JsonDiagnostics,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Suites = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,19 +47,35 @@ if ($env:PATH -notlike "*$z3Dir*") {
     $env:PATH = "$z3Dir;$env:PATH"
 }
 
-Write-Host "[1/2] Verifying firulete (--strict)..." -ForegroundColor Cyan
-if ($JsonDiagnostics) {
-    gardelc --project $firuleteDir --strict --json-diagnostics
-} else {
-    gardelc --project $firuleteDir --strict
-}
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# gardelc writes progress to stderr; in Windows PowerShell 5.1 "Stop" would turn that into a
+# terminating error. Failures are detected through $LASTEXITCODE below instead.
+$ErrorActionPreference = "Continue"
 
-Write-Host "[2/2] Verifying and running firulete/tests (--strict --run)..." -ForegroundColor Cyan
-if ($JsonDiagnostics) {
-    gardelc --project $testsDir --strict --run --json-diagnostics
-} else {
-    gardelc --project $testsDir --strict --run
-}
-exit $LASTEXITCODE
+$flags = @("--strict")
+if ($JsonDiagnostics) { $flags += "--json-diagnostics" }
 
+Push-Location $firuleteDir
+try {
+    Write-Host "[1/3] Verifying the firulete library (--strict)..." -ForegroundColor Cyan
+    gardelc --project $firuleteDir @flags
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "[2/3] Proving spec tests and building firulete/tests (--strict)..." -ForegroundColor Cyan
+    # Never run a binary left over from an earlier (possibly failed) build.
+    $exe = Join-Path $firuleteDir "build\firulete_test_bin.exe"
+    if (Test-Path $exe) { Remove-Item $exe -Force }
+    gardelc --project $testsDir @flags
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($JsonDiagnostics) {
+        # `--json-diagnostics` verifies but does not build; build once more (cached proofs, fast).
+        gardelc --project $testsDir --strict | Out-Null
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    Write-Host "[3/3] Running run tests..." -ForegroundColor Cyan
+    if (-not (Test-Path $exe)) { Write-Host "Test executable not found at $exe" -ForegroundColor Red; exit 3 }
+    & $exe @Suites
+    exit $LASTEXITCODE
+} finally {
+    Pop-Location
+}
