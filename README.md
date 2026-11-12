@@ -18,8 +18,8 @@ Firulete treats the AutoCLRS catalog as a prioritized roadmap—not a line-by-li
 | 1 | `INSERTION_SORT[K: ORD]` (`src/insertion_sort.gdl`) | Sortedness (`is_sorted`), length preservation, multiset preservation (`sort_count`) | Verified (`--strict`) |
 | 2 | `BINARY_SEARCH[K: ORD]` (`src/binary_search.gdl`) | Bounds safety (`lo + (hi - lo) / 2`), found index matches target, `None` implies target absent | Verified (`--strict`) |
 | 3 | `BINARY_HEAP[K: ORD]` (`src/binary_heap.gdl`) | Persistent heap-ordered binary tree with skew-heap `merge`: heap order kept by `insert` / `merge` / `delete_min` / `from_list`, ghost `size` and `count_of` bookkeeping (`delete_min` removes exactly one minimum); `find_min` least under congruence | Verified (`--strict`) |
-| 3b | `BOUNDED_QUEUE[A]` | FIFO invariants, size preservation | Planned |
-| 4 | `MAX_SUBARRAY` | Divide-and-conquer or Kadane sum >= every contiguous slice, witness bounds | Planned |
+| 3b | `BOUNDED_QUEUE[A]` (`src/bounded_queue.gdl`) | Persistent batched (two-list) FIFO queue: type invariant `size <= capacity`, `enqueue` appends to / `dequeue` drops the head of / `peek` returns the head of the ghost model `contents`, `enqueue` requires `not is_full`, capacity kept | Verified (`--strict`) |
+| 4 | `MAX_SUBARRAY` (`src/max_subarray.gdl`) | Kadane scan over `LIST[I64]`: witness `0 <= lo < hi <= length` with `sum = seg(xs, lo, hi)` (ghost `MATH_INT` slice sum), and the law `maximal`: every non-empty slice sum `<= sum`; no `I64` overflow under `fits` | Verified (`--strict`) |
 | 5 | `MERGE_SORT[K: ORD]` (`src/merge_sort.gdl`) | Adjacent sortedness, length and multiset preservation (`forall y` counts, in `sort`'s own contract); full `INSERTION_SORT.is_sorted` under `equals`/`less_than` congruence | Verified (`--strict`) |
 | 6 | `QUICKSORT[K: ORD]` (`src/quicksort.gdl`) | Full `INSERTION_SORT.is_sorted` for **every** `ORD` (no congruence needed), length and multiset preservation (`forall y` counts) in `sort`'s own contract | Verified (`--strict`) |
 
@@ -72,6 +72,8 @@ tests/
     merge_sort_test.gdl       # functions MERGE_SORT_TEST: spec_* + run (1500-element cross-check)
     quicksort_test.gdl        # functions QUICKSORT_TEST: spec_* + run (worst-case ascending input)
     binary_heap_test.gdl      # functions BINARY_HEAP_TEST: spec_* + run (heapsort drain cross-check)
+    bounded_queue_test.gdl    # functions BOUNDED_QUEUE_TEST: spec_* + run (1500-element fill/drain, interleaved churn)
+    max_subarray_test.gdl     # functions MAX_SUBARRAY_TEST: spec_* + run (O(n^2) brute-force cross-check)
     test_data.gdl             # functions TEST_DATA: generated inputs (`scrambled`, `ascending`)
 ```
 
@@ -100,7 +102,11 @@ Before marking any module complete:
 - `BINARY_HEAP.find_min` is proved not greater than every element only under the same congruence hypothesis, for the same reason (a root can sit above an "equal" child that has a strictly smaller descendant). Unconditionally, `is_heap` is the local parent/child order. `spec_min_is_least_i64` shows a client discharging the hypothesis.
 - `BINARY_SEARCH`'s completeness clauses take an `equals`/`less_than` congruence hypothesis. A client using them on a concrete list has to state that fact for `I64` and give an `LIST_OPS.at` hint (see `spec_search_concrete`).
 
+- `MAX_SUBARRAY.of` requires `fits(xs)`: at most 1,000,000 elements, each in [-10^12, 10^12], so every slice sum fits in `I64`. This is a deliberate input bound, not a proof gap (an unbounded version would need `BIGNAT`-style arithmetic). Maximality is published as the triggered law `maximal`, not as a `forall i. forall j.` clause in `of`'s `ensure` (see the template idiom); clients use it with no hints (`spec_optimal`).
+
 ## Compiler Limitations Hit (worked around)
 
 - `.equals` on an `OPTION` returned by a generic module's feature (e.g. `heap.find_min.equals(Some(2))`) fails verifier translation (`E0199`, undeclared `fn_equals`). Compare with a `match` helper instead (`BINARY_HEAP_TEST.holds_i64`).
 - A local annotation naming the module's own generic type inside a feature (`let one: BINARY_HEAP[K] = …`) verifies, but breaks the C backend ("used at `K`, which does not satisfy ORD"). Leave the type to inference.
+- A representation field named `first` (or `second`) collides with the verifier's tuple accessors (`E0199`: "invalid type for argument 0 in application of Tuple2_first"). Pick other names (`MAX_SUBARRAY` uses `from_ix` / `upto_ix`).
+- In generic code, an unannotated `let one = LIST.empty.prepend(x)` is typed `LIST[int]` by the verifier (`E0199`, "cannot assign Seq A to int"), while the annotated `let one: LIST[A] = …` breaks the C backend (as above). Use a small helper with a typed signature (`BOUNDED_QUEUE.single(x): LIST[A]`).

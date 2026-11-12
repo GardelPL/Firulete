@@ -1,0 +1,166 @@
+-- Tests for `BOUNDED_QUEUE[A]` (`src/bounded_queue.gdl`).
+--
+-- Spec tests (`spec_*`) are proved from `BOUNDED_QUEUE`'s public contracts only; run tests
+-- (`run`) execute the compiled code and return 0 or the first failing case. See
+-- `insertion_sort_test.gdl` for the conventions.
+functions BOUNDED_QUEUE_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The contracts alone determine the queue's contents, size and front after a sequence of
+  -- operations, including the `back`-to-`front` reversal inside `dequeue`.
+  spec_fifo_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let q0: BOUNDED_QUEUE[I64] = BOUNDED_QUEUE.empty(3)
+      let q1 = q0.enqueue(1)
+      let q2 = q1.enqueue(2)
+      let q3 = q2.enqueue(3)
+      let q4 = q3.dequeue
+      let q5 = q4.enqueue(4)
+      check
+        s1_empty: q0.is_empty
+        s1_full: q3.is_full
+        s1_contents: q3.contents = e.prepend(3).prepend(2).prepend(1)
+        s1_after: q5.contents = e.prepend(4).prepend(3).prepend(2)
+        s1_size: q5.size = 3
+        s1_capacity: q5.capacity = 3
+        s1_peek: q4.peek.get = 2
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- FIFO for every queue: what goes in last comes out after everything already queued.
+  spec_fifo(q: BOUNDED_QUEUE[STRING], x: STRING): BOOL
+    require
+      room: not q.is_full
+    do
+      True
+    ensure
+      holds: Result
+      appended: q.enqueue(x).contents = q.contents.append(LIST.empty.prepend(x))
+      grown: q.enqueue(x).size = q.size + 1
+      kept_capacity: q.enqueue(x).capacity = q.capacity
+      within: q.size <= q.capacity
+    end
+
+  -- `dequeue` removes exactly the element `peek` shows.
+  spec_dequeue(q: BOUNDED_QUEUE[NAT]): BOOL
+    require
+      nonempty: not q.is_empty
+    do
+      True
+    ensure
+      holds: Result
+      front_shown: q.peek.get = q.contents.head
+      rest: q.dequeue.contents = q.contents.tail
+      shrunk: q.dequeue.size = q.size - 1
+      listed: q.to_list = q.contents
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- Enqueue `i, i + 1, ..., n - 1` onto `q`, as long as there is room.
+  fill(q: BOUNDED_QUEUE[NAT], i: NAT, n: NAT): BOUNDED_QUEUE[NAT]
+    variant
+      n - i
+    do
+      if i >= n or q.is_full then
+        q
+      else
+        BOUNDED_QUEUE_TEST.fill(q.enqueue(i), i + 1, n)
+      end
+    end
+
+  -- Up to `n` elements of `q`, in the order `peek` / `dequeue` yield them.
+  drain(q: BOUNDED_QUEUE[NAT], n: NAT): LIST[NAT]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match q.peek
+          case None then LIST.empty
+          case Some(x) then
+            let rest = BOUNDED_QUEUE_TEST.drain(q.dequeue, n - 1)
+            rest.prepend(x)
+        end
+      end
+    end
+
+  -- Interleave: enqueue two, dequeue one, `k` times; returns what was dequeued.
+  churn(q: BOUNDED_QUEUE[NAT], k: NAT, next: NAT): LIST[NAT]
+    require
+      small: next + 2 * k <= 1000000
+    variant
+      k
+    do
+      if k = 0 or q.capacity - q.size < 2 then
+        BOUNDED_QUEUE_TEST.drain(q, 1000)
+      else
+        let q2 = q.enqueue(next).enqueue(next + 1)
+        match q2.peek
+          case None then LIST.empty
+          case Some(x) then
+            let rest = BOUNDED_QUEUE_TEST.churn(q2.dequeue, k - 1, next + 2)
+            rest.prepend(x)
+        end
+      end
+    end
+
+  -- `o` holds `v` (by `match`; see `BINARY_HEAP_TEST.holds_i64`).
+  holds_nat(o: OPTION[NAT], v: NAT): BOOL
+    do
+      match o
+        case None then False
+        case Some(x) then x = v
+      end
+    end
+
+  run: NAT
+    do
+      let en: LIST[NAT] = LIST.empty
+      let q0: BOUNDED_QUEUE[NAT] = BOUNDED_QUEUE.empty(5)
+      let qz: BOUNDED_QUEUE[NAT] = BOUNDED_QUEUE.empty(0)
+      let q3 = q0.enqueue(10).enqueue(20).enqueue(30)
+      let q_full = BOUNDED_QUEUE_TEST.fill(q0, 0, 100)
+      let full_exp = en.prepend(4).prepend(3).prepend(2).prepend(1).prepend(0)
+      -- Dequeue past the reversal point, then refill.
+      let q_mix = q3.dequeue.enqueue(40).dequeue.dequeue.enqueue(50).enqueue(60)
+      let mix_exp = en.prepend(60).prepend(50).prepend(40)
+      let es: LIST[STRING] = LIST.empty
+      let qs: BOUNDED_QUEUE[STRING] = BOUNDED_QUEUE.empty(2)
+      let qs2 = qs.enqueue("b").enqueue("a")
+      let big: BOUNDED_QUEUE[NAT] = BOUNDED_QUEUE.empty(2000)
+      let big_q = BOUNDED_QUEUE_TEST.fill(big, 0, 1500)
+      let asc = TEST_DATA.ascending(0, 1500)
+      let ch: BOUNDED_QUEUE[NAT] = BOUNDED_QUEUE.empty(1000)
+      let churned = BOUNDED_QUEUE_TEST.churn(ch, 400, 0)
+      let ch_exp = TEST_DATA.ascending(0, 800)
+
+      if not q0.is_empty then 1
+      else if q0.size != 0 or q0.capacity != 5 then 2
+      else if not q0.peek.is_none then 3
+      else if not q0.dequeue.is_empty then 4
+      else if not qz.is_full then 5
+      else if not BOUNDED_QUEUE_TEST.holds_nat(q3.peek, 10) then 6
+      else if q3.size != 3 or q3.is_full then 7
+      else if not q_full.is_full or q_full.size != 5 then 8
+      else if not TEST_LIST.same(BOUNDED_QUEUE_TEST.drain(q_full, 10), full_exp) then 9
+      else if not TEST_LIST.same(q_mix.to_list, mix_exp) then 10
+      else if not BOUNDED_QUEUE_TEST.holds_nat(q_mix.peek, 40) then 11
+      else if not TEST_LIST.same(qs2.to_list, es.prepend("a").prepend("b")) then 12
+      else if not qs2.is_full then 13
+      else if big_q.size != 1500 then 14
+      else if not TEST_LIST.same(BOUNDED_QUEUE_TEST.drain(big_q, 2000), asc) then 15
+      else if not TEST_LIST.same(churned, ch_exp) then 16
+      else 0
+      end end end end end end end end end end end end end end end end
+    end
+
+end

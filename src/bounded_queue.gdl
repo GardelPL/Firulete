@@ -1,0 +1,260 @@
+-- Verified generic bounded FIFO queue (`A`, no constraint) in idiomatic, pure, total Gardel.
+-- Algorithm: a queue with a fixed capacity (CLRS ch. 10 keeps it in a circular array). This
+-- persistent version is a batched queue: `front` holds the oldest elements in order, `back`
+-- the newest in reverse; when `front` runs out, `back` is reversed into it.
+--
+-- Proves, for every `A`:
+--   1. FIFO behaviour against the ghost model `contents` (oldest first): `enqueue(x)` appends
+--      `x`, `dequeue` drops the head, `peek` returns the head, `to_list` is the model.
+--   2. Capacity: the type invariant `size <= capacity` holds for every queue, `enqueue`
+--      requires `not is_full`, and every operation keeps the capacity.
+--   3. Size bookkeeping (`size = contents.length`), no overflow, and termination.
+--
+-- Not proved: the amortized O(1) cost of `dequeue`.
+module BOUNDED_QUEUE[A]
+
+representation {NONE}
+  front: LIST[A]
+  back: LIST[A]
+  cap: NAT
+
+invariant
+  fits: front.length + back.length <= cap
+  normal: front.length = 0 implies back.length = 0
+
+specify {ANY}
+
+  -- The queued elements, oldest first.
+  contents: LIST[A]
+    do
+      Current.front.append(BOUNDED_QUEUE.rev_onto(Current.back, LIST.empty))
+    end
+
+create {ANY}
+
+  -- An empty queue that holds at most `capacity` elements.
+  empty(capacity: NAT): BOUNDED_QUEUE[A]
+    do
+      { front = LIST.empty, back = LIST.empty, cap = capacity }
+    ensure
+      no_contents: Result.contents = LIST.empty
+      no_size: Result.size = 0
+      is_empty: Result.is_empty
+      capacity_set: Result.capacity = capacity
+    end
+
+feature {ANY}
+
+  capacity: NAT
+    do
+      Current.cap
+    end
+
+  size: NAT
+    do
+      Current.front.length + Current.back.length
+    ensure
+      model_length: Result = Current.contents.length
+      within: Result <= Current.capacity
+    end
+
+  is_empty: BOOL
+    do
+      Current.front.length = 0
+    ensure
+      no_size: Result = (Current.size = 0)
+      no_contents: Result = (Current.contents = LIST.empty)
+    end
+
+  is_full: BOOL
+    do
+      Current.size >= Current.cap
+    ensure
+      at_capacity: Result = (Current.size = Current.capacity)
+    end
+
+  -- The queue with `x` added at the back.
+  enqueue(x: A): BOUNDED_QUEUE[A]
+    require
+      room: not Current.is_full
+    do
+      let unit = BOUNDED_QUEUE.single(x)
+      if Current.front.length = 0 then
+        check
+          e_right_id: BOUNDED_QUEUE.append_nil(unit)
+        end
+        { front = unit, back = LIST.empty, cap = Current.cap }
+      else
+        let r = BOUNDED_QUEUE.rev_onto(Current.back, LIST.empty)
+        check
+          e_split: BOUNDED_QUEUE.rev_split(Current.back, unit)
+          e_assoc: BOUNDED_QUEUE.append_assoc(Current.front, r, unit)
+        end
+        { front = Current.front, back = Current.back.prepend(x), cap = Current.cap }
+      end
+    ensure
+      fifo: Result.contents = Current.contents.append(LIST.empty.prepend(x))
+      grown: Result.size = Current.size + 1
+      not_empty: not Result.is_empty
+      same_capacity: Result.capacity = Current.capacity
+    end
+
+  -- The oldest element, or `None` for the empty queue.
+  peek: OPTION[A]
+    do
+      if Current.front.length = 0 then
+        None
+      else
+        check
+          p_head: BOUNDED_QUEUE.cons_append(Current.front, BOUNDED_QUEUE.rev_onto(Current.back, LIST.empty))
+        end
+        Some(Current.front.head)
+      end
+    ensure
+      none_iff_empty: Result.is_none = Current.is_empty
+      oldest: Result.is_some implies Result.get = Current.contents.head
+    end
+
+  -- The queue without its oldest element (the empty queue stays empty).
+  dequeue: BOUNDED_QUEUE[A]
+    do
+      let r = BOUNDED_QUEUE.rev_onto(Current.back, LIST.empty)
+      if Current.front.length = 0 then
+        Current
+      else
+        check
+          d_tail: BOUNDED_QUEUE.cons_append(Current.front, r)
+          d_right_id: BOUNDED_QUEUE.append_nil(r)
+        end
+        if Current.front.length = 1 then
+          { front = r, back = LIST.empty, cap = Current.cap }
+        else
+          { front = Current.front.tail, back = Current.back, cap = Current.cap }
+        end
+      end
+    ensure
+      empty_case: Current.is_empty implies Result.contents = Current.contents
+      fifo: (not Current.is_empty) implies Result.contents = Current.contents.tail
+      shrunk: (not Current.is_empty) implies Result.size = Current.size - 1
+      same_capacity: Result.capacity = Current.capacity
+    end
+
+  -- The queued elements, oldest first.
+  to_list: LIST[A]
+    do
+      Current.front.append(BOUNDED_QUEUE.rev_onto(Current.back, LIST.empty))
+    ensure
+      is_model: Result = Current.contents
+    end
+
+create {NONE}
+
+  -- The one-element list `[x]` (a named routine, so `LIST[A]` is inferred in generic code).
+  single(x: A): LIST[A]
+    do
+      LIST.empty.prepend(x)
+    ensure
+      is_single: Result = LIST.empty.prepend(x)
+    end
+
+  -- `xs` reversed onto `acc`.
+  rev_onto(xs: LIST[A], acc: LIST[A]): LIST[A]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        acc
+      else
+        let more = acc.prepend(xs.head)
+        BOUNDED_QUEUE.rev_onto(xs.tail, more)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = acc
+      cons_case: xs.length > 0 implies Result = BOUNDED_QUEUE.rev_onto(xs.tail, acc.prepend(xs.head))
+      len: Result.length = xs.length + acc.length
+    end
+
+  -- Reversing onto `acc` is reversing onto nothing, then appending `acc`.
+  rev_split(xs: LIST[A], acc: LIST[A]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        check s_nil: BOUNDED_QUEUE.append_nil(acc) end
+        True
+      else
+        let h = xs.head
+        let t = xs.tail
+        let one = BOUNDED_QUEUE.single(h)
+        let r = BOUNDED_QUEUE.rev_onto(t, LIST.empty)
+        check
+          s_rec_acc: BOUNDED_QUEUE.rev_split(t, acc.prepend(h))
+          s_rec_one: BOUNDED_QUEUE.rev_split(t, one)
+          s_assoc: BOUNDED_QUEUE.append_assoc(r, one, acc)
+          s_one: BOUNDED_QUEUE.cons_append(one, acc)
+          s_one_tail: one.tail = LIST.empty
+        end
+        True
+      end
+    ensure
+      holds: Result
+      split: BOUNDED_QUEUE.rev_onto(xs, acc) = BOUNDED_QUEUE.rev_onto(xs, LIST.empty).append(acc)
+    end
+
+  append_nil(a: LIST[A]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        check
+          n_rec: BOUNDED_QUEUE.append_nil(a.tail)
+          n_shape: BOUNDED_QUEUE.cons_append(a, LIST.empty)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      right_id: a.append(LIST.empty) = a
+    end
+
+  append_assoc(a: LIST[A], b: LIST[A], c: LIST[A]): BOOL
+    variant
+      a.length
+    do
+      if a.length = 0 then
+        True
+      else
+        let ab = a.append(b)
+        check
+          a_rec: BOUNDED_QUEUE.append_assoc(a.tail, b, c)
+          a_ab: BOUNDED_QUEUE.cons_append(a, b)
+          a_abc: BOUNDED_QUEUE.cons_append(ab, c)
+          a_bc: BOUNDED_QUEUE.cons_append(a, b.append(c))
+        end
+        True
+      end
+    ensure
+      holds: Result
+      assoc: a.append(b).append(c) = a.append(b.append(c))
+    end
+
+  -- A non-empty `a` keeps its head in `a.append(c)`, and its tail goes before `c`.
+  cons_append(a: LIST[A], c: LIST[A]): BOOL
+    do
+      if a.length = 0 then
+        True
+      else
+        let rest = a.tail.append(c)
+        check c_shape: a.append(c) = rest.prepend(a.head) end
+        True
+      end
+    ensure
+      holds: Result
+      head_kept: a.length > 0 implies a.append(c).head = a.head
+      tail_joined: a.length > 0 implies a.append(c).tail = a.tail.append(c)
+      empty_left: a.length = 0 implies a.append(c) = c
+    end
+
+end

@@ -50,16 +50,20 @@ feature {ANY}
       let w_ms = wanted(filter, "merge_sort")
       let w_qs = wanted(filter, "quicksort")
       let w_bh = wanted(filter, "binary_heap")
+      let w_bq = wanted(filter, "bounded_queue")
+      let w_mx = wanted(filter, "max_subarray")
       let rc_is = if w_is then INSERTION_SORT_TEST.run else 0 end
       let rc_bs = if w_bs then BINARY_SEARCH_TEST.run else 0 end
       let rc_ms = if w_ms then MERGE_SORT_TEST.run else 0 end
       let rc_qs = if w_qs then QUICKSORT_TEST.run else 0 end
       let rc_bh = if w_bh then BINARY_HEAP_TEST.run else 0 end
-      let failures = failed(w_is, rc_is) + failed(w_bs, rc_bs) + failed(w_ms, rc_ms) + failed(w_qs, rc_qs) + failed(w_bh, rc_bh)
-      if not (w_is or w_bs or w_ms or w_qs or w_bh) then
+      let rc_bq = if w_bq then BOUNDED_QUEUE_TEST.run else 0 end
+      let rc_mx = if w_mx then MAX_SUBARRAY_TEST.run else 0 end
+      let failures = failed(w_is, rc_is) + failed(w_bs, rc_bs) + failed(w_ms, rc_ms) + failed(w_qs, rc_qs) + failed(w_bh, rc_bh) + failed(w_bq, rc_bq) + failed(w_mx, rc_mx)
+      if not (w_is or w_bs or w_ms or w_qs or w_bh or w_bq or w_mx) then
         with IO
           IO.print_line("firulete-tests: no suite matches the filter; known suites:")
-          IO.print_line("  insertion_sort binary_search merge_sort quicksort binary_heap")
+          IO.print_line("  insertion_sort binary_search merge_sort quicksort binary_heap bounded_queue max_subarray")
           IO.exit(2)
         end
       else
@@ -69,6 +73,8 @@ feature {ANY}
           IO.print_line(line("merge_sort", w_ms, rc_ms))
           IO.print_line(line("quicksort", w_qs, rc_qs))
           IO.print_line(line("binary_heap", w_bh, rc_bh))
+          IO.print_line(line("bounded_queue", w_bq, rc_bq))
+          IO.print_line(line("max_subarray", w_mx, rc_mx))
           if failures = 0 then
             with IO
               IO.print_line("firulete-tests: all selected suites passed")

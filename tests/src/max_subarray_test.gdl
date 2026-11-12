@@ -1,0 +1,186 @@
+-- Tests for `MAX_SUBARRAY` (`src/max_subarray.gdl`).
+--
+-- Spec tests (`spec_*`) are proved from `MAX_SUBARRAY`'s public contracts and laws only; run
+-- tests (`run`) execute the compiled code and return 0 or the first failing case. See
+-- `insertion_sort_test.gdl` for the conventions.
+functions MAX_SUBARRAY_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The witness clause and the `maximal` law together pin down the answer on a concrete input:
+  -- the slice [3, -1, 2] is at least 4, and nothing beats the witness.
+  spec_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let xs = e.prepend(-5).prepend(2).prepend(-1).prepend(3).prepend(-2)
+      check
+        s1_fits: MAX_SUBARRAY.fits(xs)
+        s1_slice: MAX_SUBARRAY.seg(xs, 1, 4) = 4
+        s1_at_least: MAX_SUBARRAY.of(xs).sum >= 4
+        s1_in_range: MAX_SUBARRAY.of(xs).hi <= 5
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- All negative: the answer is the largest single element.
+  spec_all_negative: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let xs = e.prepend(-4).prepend(-1).prepend(-3)
+      check
+        s2_fits: MAX_SUBARRAY.fits(xs)
+        s2_single: MAX_SUBARRAY.seg(xs, 1, 2) = -1
+        s2_at_least: MAX_SUBARRAY.of(xs).sum >= -1
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- For every input: the result is the sum of a real slice and bounds every slice.
+  spec_optimal(xs: LIST[I64], i: NAT, j: NAT): BOOL
+    require
+      nonempty: xs.length > 0
+      fits: MAX_SUBARRAY.fits(xs)
+    do
+      True
+    ensure
+      holds: Result
+      real_slice: MAX_SUBARRAY.of(xs).lo < MAX_SUBARRAY.of(xs).hi and MAX_SUBARRAY.of(xs).hi <= xs.length
+      witness: MAX_SUBARRAY.of(xs).sum = MAX_SUBARRAY.seg(xs, MAX_SUBARRAY.of(xs).lo, MAX_SUBARRAY.of(xs).hi)
+      maximal: (i < j and j <= xs.length) implies MAX_SUBARRAY.seg(xs, i, j) <= MAX_SUBARRAY.of(xs).sum
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- `a + b`, or `a` when that would overflow (never on the inputs below).
+  add(a: I64, b: I64): I64
+    do
+      if b > 0 and a > 9223372036854775807 - b then
+        a
+      else if b < 0 and a < -9223372036854775808 - b then
+        a
+      else
+        a + b
+      end end
+    end
+
+  -- The sum of `xs[lo..hi)`, computed directly.
+  slice(xs: LIST[I64], lo: NAT, hi: NAT): I64
+    variant
+      xs.length
+    do
+      if hi <= lo or xs.length = 0 then
+        0
+      else if lo = 0 then
+        MAX_SUBARRAY_TEST.add(xs.head, MAX_SUBARRAY_TEST.slice(xs.tail, 0, hi - 1))
+      else
+        MAX_SUBARRAY_TEST.slice(xs.tail, lo - 1, hi - 1)
+      end end
+    end
+
+  -- The best non-empty prefix sum of `xs`, starting from running sum `acc` and best `best`.
+  best_prefix(xs: LIST[I64], acc: I64, best: I64): I64
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        best
+      else
+        let s = MAX_SUBARRAY_TEST.add(acc, xs.head)
+        MAX_SUBARRAY_TEST.best_prefix(xs.tail, s, if s > best then s else best end)
+      end
+    end
+
+  -- Brute force, O(n^2): the best prefix of every suffix.
+  brute(xs: LIST[I64]): I64
+    require
+      nonempty: xs.length > 0
+    variant
+      xs.length
+    do
+      let here = MAX_SUBARRAY_TEST.best_prefix(xs.tail, xs.head, xs.head)
+      if xs.length = 1 then
+        here
+      else
+        let rest = MAX_SUBARRAY_TEST.brute(xs.tail)
+        if rest > here then rest else here end
+      end
+    end
+
+  -- `n` values in [-504, 504], scrambled.
+  signed(n: NAT): LIST[I64]
+    require
+      small: n <= 1000000
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        let rest = MAX_SUBARRAY_TEST.signed(n - 1)
+        rest.prepend(I64.from_nat((n * 7919) % 1009) - 504)
+      end
+    end
+
+  -- `of(xs)` agrees with the brute force, and its witness slice really has that sum.
+  agrees(xs: LIST[I64]): BOOL
+    require
+      nonempty: xs.length > 0
+      fits: MAX_SUBARRAY.fits(xs)
+    do
+      let r = MAX_SUBARRAY.of(xs)
+      r.sum = MAX_SUBARRAY_TEST.brute(xs) and r.sum = MAX_SUBARRAY_TEST.slice(xs, r.lo, r.hi)
+    end
+
+  -- `of(xs)` is accepted, and has sum `s`.
+  best_is(xs: LIST[I64], s: I64): BOOL
+    do
+      xs.length > 0 and MAX_SUBARRAY.fits(xs) and MAX_SUBARRAY.of(xs).sum = s
+    end
+
+  -- `of(xs)` is accepted, and is the slice `xs[lo..hi)` with sum `s`.
+  slice_is(xs: LIST[I64], s: I64, lo: NAT, hi: NAT): BOOL
+    do
+      xs.length > 0 and MAX_SUBARRAY.fits(xs) and MAX_SUBARRAY.of(xs).sum = s and
+        MAX_SUBARRAY.of(xs).lo = lo and MAX_SUBARRAY.of(xs).hi = hi
+    end
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let one = e.prepend(7)
+      let neg_one = e.prepend(-7)
+      let mixed = e.prepend(-5).prepend(2).prepend(-1).prepend(3).prepend(-2)
+      let all_neg = e.prepend(-4).prepend(-1).prepend(-3)
+      let all_pos = e.prepend(3).prepend(2).prepend(1)
+      let zeros = e.prepend(0).prepend(0).prepend(0)
+      -- A longer mix: the best slice is [18, 20, -7, 12, -4, 15] = 54, in the middle.
+      let longer = e.prepend(7).prepend(-22).prepend(15).prepend(-4).prepend(12).prepend(-7)
+                  .prepend(20).prepend(18).prepend(-23).prepend(-5).prepend(-16).prepend(-3)
+                  .prepend(13)
+      let extremes = e.prepend(1000000000000).prepend(-1000000000000).prepend(1000000000000)
+      let gen = MAX_SUBARRAY_TEST.signed(300)
+
+      if not MAX_SUBARRAY_TEST.best_is(one, 7) then 1
+      else if not MAX_SUBARRAY_TEST.best_is(neg_one, -7) then 2
+      else if not MAX_SUBARRAY_TEST.slice_is(mixed, 4, 1, 4) then 3
+      else if not MAX_SUBARRAY_TEST.slice_is(all_neg, -1, 1, 2) then 4
+      else if not MAX_SUBARRAY_TEST.slice_is(all_pos, 6, 0, 3) then 5
+      else if not MAX_SUBARRAY_TEST.best_is(zeros, 0) then 6
+      else if not MAX_SUBARRAY_TEST.slice_is(longer, 54, 5, 11) then 7
+      else if MAX_SUBARRAY_TEST.slice(longer, 5, 11) != 54 then 8
+      else if not MAX_SUBARRAY_TEST.best_is(extremes, 1000000000000) then 9
+      else if not MAX_SUBARRAY.fits(gen) or gen.length != 300 then 10
+      else if not MAX_SUBARRAY_TEST.agrees(gen) then 11
+      else if not MAX_SUBARRAY.fits(longer) or not MAX_SUBARRAY_TEST.agrees(longer) then 12
+      else if MAX_SUBARRAY.fits(e.prepend(1000000000001)) then 13
+      else 0
+      end end end end end end end end end end end end end
+    end
+
+end

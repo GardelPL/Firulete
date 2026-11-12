@@ -1,0 +1,213 @@
+-- Verified maximum-subarray (maximum contiguous slice sum) over `LIST[I64]`, in idiomatic, pure,
+-- total Gardel. Problem: CLRS ch. 4 (solved there by divide and conquer). This version is the
+-- linear scan known as Kadane's algorithm, run from the right end: for each suffix it keeps the
+-- best slice and the best slice that starts at the suffix's first element.
+--
+-- Proves, for every non-empty `xs` within the overflow bounds (`fits`):
+--   1. Witness: `0 <= lo < hi <= xs.length` and `sum = seg(xs, lo, hi)`, the exact sum of the
+--      slice `xs[lo..hi)`.
+--   2. Maximality (the law `maximal`): `seg(xs, i, j) <= sum` for every non-empty slice
+--      `0 <= i < j <= xs.length`.
+--   3. No I64 overflow, and termination.
+-- `seg` is a ghost `MATH_INT` sum, so the specification itself cannot overflow.
+--
+-- Precondition (`fits`): at most 1_000_000 elements, each in [-10^12, 10^12], so every slice sum
+-- lies within +-10^18 and fits in `I64`.
+module MAX_SUBARRAY
+
+representation {NONE}
+  best: I64
+  from_ix: NAT
+  upto_ix: NAT
+  run: I64
+  run_len: NAT
+
+create {ANY}
+
+  -- Every element of `xs` lies in [-10^12, 10^12].
+  small(xs: LIST[I64]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        -1000000000000 <= xs.head and xs.head <= 1000000000000 and MAX_SUBARRAY.small(xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result
+      cons_case: xs.length > 0 implies
+        (Result = (-1000000000000 <= xs.head and xs.head <= 1000000000000 and MAX_SUBARRAY.small(xs.tail)))
+    end
+
+  -- `xs` is short enough, and its elements small enough, for every slice sum to fit in `I64`.
+  fits(xs: LIST[I64]): BOOL
+    do
+      xs.length <= 1000000 and MAX_SUBARRAY.small(xs)
+    ensure
+      def: Result = (xs.length <= 1000000 and MAX_SUBARRAY.small(xs))
+    end
+
+  -- Ghost: the sum of `xs[i..j)` (0 when the range is empty).
+  seg(xs: LIST[I64], i: NAT, j: NAT): MATH_INT
+    variant
+      xs.length
+    do
+      if j <= i or xs.length = 0 then
+        0
+      else if i = 0 then
+        xs.head + MAX_SUBARRAY.seg(xs.tail, 0, j - 1)
+      else
+        MAX_SUBARRAY.seg(xs.tail, i - 1, j - 1)
+      end end
+    ensure
+      empty_case: (j <= i or xs.length = 0) implies Result = 0
+      head_case: (i = 0 and 0 < j and xs.length > 0) implies
+        Result = xs.head + MAX_SUBARRAY.seg(xs.tail, 0, j - 1)
+      shift_case: (0 < i and i < j and xs.length > 0) implies
+        Result = MAX_SUBARRAY.seg(xs.tail, i - 1, j - 1)
+    end
+
+  -- A slice of `xs` with the largest sum.
+  of(xs: LIST[I64]): MAX_SUBARRAY
+    require
+      nonempty: xs.length > 0
+      fits: MAX_SUBARRAY.fits(xs)
+    do
+      MAX_SUBARRAY.scan(xs)
+    ensure
+      ordered: Result.lo < Result.hi
+      in_range: Result.hi <= xs.length
+      witness: Result.sum = MAX_SUBARRAY.seg(xs, Result.lo, Result.hi)
+    end
+
+feature {ANY}
+
+  -- The largest slice sum.
+  sum: I64
+    do
+      Current.best
+    end
+
+  -- The slice is `xs[lo..hi)`.
+  lo: NAT
+    do
+      Current.from_ix
+    end
+
+  hi: NAT
+    do
+      Current.upto_ix
+    end
+
+create {NONE}
+
+  -- Kadane's scan: `best` / `from_ix` / `upto_ix` describe the best slice of `xs`, and `run` /
+  -- `run_len` the best non-empty prefix `xs[0..run_len)`.
+  scan(xs: LIST[I64]): MAX_SUBARRAY
+    require
+      nonempty: xs.length > 0
+      fits: MAX_SUBARRAY.fits(xs)
+    variant
+      xs.length
+    do
+      let h = xs.head
+      if xs.length = 1 then
+        { best = h, from_ix = 0, upto_ix = 1, run = h, run_len = 1 }
+      else
+        let r = MAX_SUBARRAY.scan(xs.tail)
+        let start = if r.run > 0 then h + r.run else h end
+        let start_len = if r.run > 0 then r.run_len + 1 else 1 end
+        if r.best > start then
+          { best = r.best, from_ix = r.from_ix + 1, upto_ix = r.upto_ix + 1, run = start, run_len = start_len }
+        else
+          { best = start, from_ix = 0, upto_ix = start_len, run = start, run_len = start_len }
+        end
+      end
+    ensure
+      ordered: Result.lo < Result.hi
+      in_range: Result.hi <= xs.length
+      run_range: 0 < Result.run_len and Result.run_len <= xs.length
+      best_bound: -1000000000000 * xs.length <= Result.sum and Result.sum <= 1000000000000 * xs.length
+      run_bound: -1000000000000 * xs.length <= Result.run and Result.run <= 1000000000000 * xs.length
+      witness: Result.sum = MAX_SUBARRAY.seg(xs, Result.lo, Result.hi)
+      run_witness: Result.run = MAX_SUBARRAY.seg(xs, 0, Result.run_len)
+      run_single: xs.length = 1 implies (Result.run = xs.head and Result.sum = xs.head)
+      sum_ge_run: Result.sum >= Result.run
+    end
+
+  -- One step of the scan, kept out of `scan`'s contract (where `scan(xs.tail)` would make the
+  -- solver unfold the scan down the whole list).
+  scan_step(xs: LIST[I64]): BOOL
+    require
+      longer: xs.length > 1
+      fits: MAX_SUBARRAY.fits(xs)
+    do
+      True
+    ensure
+      holds: Result
+      tail_fits: MAX_SUBARRAY.fits(xs.tail)
+      run_step: MAX_SUBARRAY.scan(xs).run >= xs.head and
+        MAX_SUBARRAY.scan(xs).run >= xs.head + MAX_SUBARRAY.scan(xs.tail).run
+      sum_step: MAX_SUBARRAY.scan(xs).sum >= MAX_SUBARRAY.scan(xs.tail).sum
+    end
+
+  -- Every non-empty prefix sum is at most the scan's `run`. Stated per `m` (a `forall` over
+  -- `seg` in `scan`'s own contract sends the solver into a matching loop).
+  run_lemma(xs: LIST[I64], m: NAT): BOOL
+    variant
+      xs.length
+    do
+      if xs.length <= 1 or m <= 1 then
+        True
+      else
+        check
+          r_rec: MAX_SUBARRAY.run_lemma(xs.tail, m - 1)
+          r_step: MAX_SUBARRAY.fits(xs) implies MAX_SUBARRAY.scan_step(xs)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      bounded: (xs.length > 0 and MAX_SUBARRAY.fits(xs) and 0 < m and m <= xs.length) implies
+        MAX_SUBARRAY.seg(xs, 0, m) <= MAX_SUBARRAY.scan(xs).run
+    end
+
+  -- Every non-empty slice sum is at most the scan's `sum`.
+  max_lemma(xs: LIST[I64], i: NAT, j: NAT): BOOL
+    variant
+      xs.length
+    do
+      if j <= i then
+        True
+      else if xs.length <= 1 or i = 0 then
+        check m_run: MAX_SUBARRAY.run_lemma(xs, j) end
+        True
+      else
+        check
+          m_rec: MAX_SUBARRAY.max_lemma(xs.tail, i - 1, j - 1)
+          m_step: MAX_SUBARRAY.fits(xs) implies MAX_SUBARRAY.scan_step(xs)
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      bounded: (xs.length > 0 and MAX_SUBARRAY.fits(xs) and i < j and j <= xs.length) implies
+        MAX_SUBARRAY.seg(xs, i, j) <= MAX_SUBARRAY.scan(xs).sum
+    end
+
+specify {ANY}
+
+  -- Maximality: no non-empty slice of `xs` has a larger sum than `of(xs)`. With its trigger a
+  -- client's solver applies it wherever a slice sum of `xs` appears.
+  law maximal(xs: LIST[I64], i: NAT, j: NAT)
+    trigger
+      MAX_SUBARRAY.seg(xs, i, j)
+    do
+      MAX_SUBARRAY.max_lemma(xs, i, j)
+    ensure
+      bounded: (xs.length > 0 and MAX_SUBARRAY.fits(xs) and i < j and j <= xs.length) implies
+        MAX_SUBARRAY.seg(xs, i, j) <= MAX_SUBARRAY.of(xs).sum
+    end
+
+end
