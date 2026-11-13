@@ -5,7 +5,7 @@ Use this template when asking an AI agent to formalize a new algorithm or data s
 ---
 
 ```markdown
-You are formalizing `<ALGORITHM_NAME>` in idiomatic **Gardel** for the `firulete` project (`c:\home\Learn\Gardel\firulete`).
+You are formalizing `<ALGORITHM_NAME>` in idiomatic **Gardel** for the `firulete` project (`firulete/`, next to the compiler in `gardelc/`).
 
 ### Context to Read First
 1. Read `gardelc/guide/GUIDE.md` (especially §3 Numerics, §6 Contracts, §9 Termination & Known Limits, §12 Concepts, §15 AI Verification Workflow).
@@ -57,7 +57,7 @@ Create `firulete/tests/src/<module_name>_test.gdl` declaring `functions <MODULE_
 - Check that the tests can fail: break one spec expectation and one run expectation, confirm each fails, then restore them.
 
 ### Verification Loop
-Run (from `c:\home\Learn\Gardel`):
+Run (from the directory that contains both `firulete/` and `gardelc/`):
 ```powershell
 ./firulete/test.ps1 -JsonDiagnostics <module_name>
 ```
@@ -69,4 +69,3 @@ Iterate on counterexamples and failed VCs until both verification steps print `[
 3. Update `firulete/README.md`: add a row to "Verified Catalog", remove the module's row from "Roadmap", and update "Known Spec Gaps" if needed.
 4. Summarize the proved specification clauses and flag any assumptions or preconditions for human spec review.
 ```
-
