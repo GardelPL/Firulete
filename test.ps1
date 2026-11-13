@@ -1,4 +1,5 @@
-# Verify `firulete`, prove the spec tests in `firulete/tests`, then run the run tests.
+# Verify `firulete` and `firulete/derived`, prove the spec tests in `firulete/tests`, then run
+# the run tests.
 #
 #   ./firulete/test.ps1                                # all suites
 #   ./firulete/test.ps1 insertion_sort binary_search   # only the named suites
@@ -17,6 +18,7 @@ $ErrorActionPreference = "Stop"
 $firuleteDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $firuleteDir
 $testsDir = Join-Path $firuleteDir "tests"
+$derivedDir = Join-Path $firuleteDir "derived"
 
 function Resolve-Z3 {
     if ($env:Z3_EXE -and (Test-Path $env:Z3_EXE)) {
@@ -56,11 +58,15 @@ if ($JsonDiagnostics) { $flags += "--json-diagnostics" }
 
 Push-Location $firuleteDir
 try {
-    Write-Host "[1/3] Verifying the firulete library (--strict)..." -ForegroundColor Cyan
+    Write-Host "[1/4] Verifying the firulete library (--strict)..." -ForegroundColor Cyan
     gardelc --project $firuleteDir @flags
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Write-Host "[2/3] Proving spec tests and building firulete/tests (--strict)..." -ForegroundColor Cyan
+    Write-Host "[2/4] Verifying firulete/derived (--strict)..." -ForegroundColor Cyan
+    gardelc --project $derivedDir @flags
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "[3/4] Proving spec tests and building firulete/tests (--strict)..." -ForegroundColor Cyan
     # Never run a binary left over from an earlier (possibly failed) build.
     $exe = Join-Path $firuleteDir "build\firulete_test_bin.exe"
     if (Test-Path $exe) { Remove-Item $exe -Force }
@@ -72,7 +78,7 @@ try {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
-    Write-Host "[3/3] Running run tests..." -ForegroundColor Cyan
+    Write-Host "[4/4] Running run tests..." -ForegroundColor Cyan
     if (-not (Test-Path $exe)) { Write-Host "Test executable not found at $exe" -ForegroundColor Red; exit 3 }
     & $exe @Suites
     exit $LASTEXITCODE

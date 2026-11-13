@@ -1,0 +1,116 @@
+-- Verified generic bounded LIFO stack (`A`, no constraint) in idiomatic, pure, total Gardel.
+-- Algorithm: a stack with a fixed capacity (CLRS ch. 10.1 keeps it in an array with a top
+-- index). This persistent version keeps the elements in a list, top first.
+--
+-- Proves, for every `A`:
+--   1. LIFO behaviour against the ghost model `contents` (top first): `push(x)` puts `x` on top,
+--      `pop` removes the top, `top` returns it, so `push(x).pop` has the original contents.
+--   2. Capacity: the type invariant `size <= capacity`, `push` requires `not is_full`, and every
+--      operation keeps the capacity.
+--   3. Size bookkeeping (`size = contents.length`), no overflow, and termination.
+module BOUNDED_STACK[A]
+
+representation {NONE}
+  items: LIST[A]
+  limit: NAT
+
+invariant
+  fits: items.length <= limit
+
+specify {ANY}
+
+  -- The stacked elements, top first.
+  contents: LIST[A]
+    do
+      Current.items
+    end
+
+create {ANY}
+
+  -- An empty stack that holds at most `capacity` elements.
+  empty(capacity: NAT): BOUNDED_STACK[A]
+    do
+      { items = LIST.empty, limit = capacity }
+    ensure
+      no_contents: Result.contents = LIST.empty
+      no_size: Result.size = 0
+      is_empty: Result.is_empty
+      capacity_set: Result.capacity = capacity
+    end
+
+feature {ANY}
+
+  capacity: NAT
+    do
+      Current.limit
+    end
+
+  size: NAT
+    do
+      Current.items.length
+    ensure
+      model_length: Result = Current.contents.length
+      within: Result <= Current.capacity
+    end
+
+  is_empty: BOOL
+    do
+      Current.items.length = 0
+    ensure
+      no_size: Result = (Current.size = 0)
+      no_contents: Result = (Current.contents = LIST.empty)
+    end
+
+  is_full: BOOL
+    do
+      Current.items.length >= Current.limit
+    ensure
+      at_capacity: Result = (Current.size = Current.capacity)
+    end
+
+  -- The stack with `x` on top.
+  push(x: A): BOUNDED_STACK[A]
+    require
+      room: not Current.is_full
+    do
+      { items = Current.items.prepend(x), limit = Current.limit }
+    ensure
+      lifo: Result.contents = Current.contents.prepend(x)
+      grown: Result.size = Current.size + 1
+      not_empty: not Result.is_empty
+      same_capacity: Result.capacity = Current.capacity
+    end
+
+  -- The top element, or `None` for the empty stack.
+  top: OPTION[A]
+    do
+      if Current.items.length = 0 then None else Some(Current.items.head) end
+    ensure
+      none_iff_empty: Result.is_none = Current.is_empty
+      newest: Result.is_some implies Result.get = Current.contents.head
+    end
+
+  -- The stack without its top element (the empty stack stays empty).
+  pop: BOUNDED_STACK[A]
+    do
+      if Current.items.length = 0 then
+        Current
+      else
+        { items = Current.items.tail, limit = Current.limit }
+      end
+    ensure
+      empty_case: Current.is_empty implies Result.contents = Current.contents
+      lifo: (not Current.is_empty) implies Result.contents = Current.contents.tail
+      shrunk: (not Current.is_empty) implies Result.size = Current.size - 1
+      same_capacity: Result.capacity = Current.capacity
+    end
+
+  -- The stacked elements, top first.
+  to_list: LIST[A]
+    do
+      Current.items
+    ensure
+      is_model: Result = Current.contents
+    end
+
+end

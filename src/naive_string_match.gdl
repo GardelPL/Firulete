@@ -1,0 +1,97 @@
+-- Verified naive string matching over `LIST[A]` (`A: EQ`) in idiomatic, pure, total Gardel.
+-- Algorithm: CLRS ch. 32.1, try every shift `s` and compare the pattern with the text there.
+--
+-- Proves, for every `A: EQ`, text `t` and pattern `p`:
+--   1. Exactly the matching shifts: for every `s`, `s` occurs once in `matches(t, p)` if `p`
+--      occurs in `t` at shift `s` (`occurs_at`) and not at all otherwise
+--      (`INSERTION_SORT.count_of`).
+--   2. The shifts are in increasing order (`INSERTION_SORT.is_sorted`), and termination.
+-- `occurs_at(t, p, s)`: `t` has at least `s + p.length` elements and `t[s + i]` equals `p[i]`
+-- for every `i < p.length`, stated structurally through `is_prefix`.
+--
+-- Not proved: the `O((n - m + 1) m)` comparison count.
+module NAIVE_STRING_MATCH[A: EQ]
+
+create {ANY}
+
+  -- `p` is a prefix of `t` (elementwise `equals`).
+  is_prefix(p: LIST[A], t: LIST[A]): BOOL
+    variant
+      p.length
+    do
+      if p.length = 0 then
+        True
+      else if t.length = 0 then
+        False
+      else
+        p.head.equals(t.head) and NAIVE_STRING_MATCH.is_prefix(p.tail, t.tail)
+      end end
+    ensure
+      empty_case: p.length = 0 implies Result
+      short_case: (p.length > 0 and t.length = 0) implies not Result
+      cons_case: (p.length > 0 and t.length > 0) implies
+        Result = (p.head.equals(t.head) and NAIVE_STRING_MATCH.is_prefix(p.tail, t.tail))
+    end
+
+  -- `p` occurs in `t` starting at index `s`.
+  occurs_at(t: LIST[A], p: LIST[A], s: NAT): BOOL
+    variant
+      s
+    do
+      if s = 0 then
+        NAIVE_STRING_MATCH.is_prefix(p, t)
+      else
+        t.length > 0 and NAIVE_STRING_MATCH.occurs_at(t.tail, p, s - 1)
+      end
+    ensure
+      zero_case: s = 0 implies Result = NAIVE_STRING_MATCH.is_prefix(p, t)
+      step_case: s > 0 implies Result = (t.length > 0 and NAIVE_STRING_MATCH.occurs_at(t.tail, p, s - 1))
+    end
+
+  -- Every shift at which `p` occurs in `t`, in increasing order.
+  matches(t: LIST[A], p: LIST[A]): LIST[NAT]
+    require
+      addressable: t.length < 18446744073709551615
+    do
+      NAIVE_STRING_MATCH.scan(t, p, 0)
+    ensure
+      exact: forall s: NAT.
+        INSERTION_SORT.count_of(s, Result) = (if NAIVE_STRING_MATCH.occurs_at(t, p, s) then 1 else 0 end)
+      ascending: INSERTION_SORT.is_sorted(Result)
+    end
+
+create {NONE}
+
+  -- The shifts `k + s` for every `s` at which `p` occurs in `t`, in increasing order.
+  scan(t: LIST[A], p: LIST[A], k: NAT): LIST[NAT]
+    require
+      fits: k + t.length <= 18446744073709551615
+    variant
+      t.length
+    do
+      if t.length = 0 then
+        if p.length = 0 then LIST.empty.prepend(k) else LIST.empty end
+      else
+        let rest = NAIVE_STRING_MATCH.scan(t.tail, p, k + 1)
+        check
+          lowered: INSERTION_SORT.all_ge_weaken(k, k + 1, rest)
+          k_lt: k.less_than(k + 1)
+        end
+        if NAIVE_STRING_MATCH.is_prefix(p, t) then
+          check
+            above: INSERTION_SORT.all_ge(k, rest)
+          end
+          rest.prepend(k)
+        else
+          rest
+        end
+      end
+    ensure
+      exact: forall s: NAT.
+        INSERTION_SORT.count_of(s, Result) =
+          (if s >= k and NAIVE_STRING_MATCH.occurs_at(t, p, s - k) then 1 else 0 end)
+      bounded: INSERTION_SORT.all_ge(k, Result)
+      ascending: INSERTION_SORT.is_sorted(Result)
+    end
+
+end

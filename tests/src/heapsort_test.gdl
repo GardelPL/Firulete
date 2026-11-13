@@ -1,0 +1,81 @@
+-- Tests for `HEAPSORT[K: ORD]` (`derived/src/heapsort.gdl`). See `insertion_sort_test.gdl` for
+-- the conventions.
+functions HEAPSORT_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- Permutation and length hold for every `ORD` (here `STRING`, no hypothesis).
+  spec_permutation(xs: LIST[STRING], y: STRING): BOOL
+    require
+      addressable: xs.length <= 18446744073709551615
+    do
+      True
+    ensure
+      holds: Result
+      same_length: HEAPSORT.sort(xs).length = xs.length
+      same_count: INSERTION_SORT.count_of(y, HEAPSORT.sort(xs)) = INSERTION_SORT.count_of(y, xs)
+    end
+
+  -- At `I64` the congruence hypothesis holds, so the output is sorted.
+  spec_sorted_i64(xs: LIST[I64]): BOOL
+    require
+      addressable: xs.length <= 18446744073709551615
+    do
+      check
+        s2_congruent: forall a: I64. (a.equals(a) implies
+          (forall b: I64. (b.equals(b) implies
+            (forall c: I64.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))
+      end
+      True
+    ensure
+      holds: Result
+      sorted: INSERTION_SORT.is_sorted(HEAPSORT.sort(xs))
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- `HEAPSORT.sort`, guarded by its precondition.
+  sorted_nat(xs: LIST[NAT]): LIST[NAT]
+    do
+      if xs.length <= 18446744073709551615 then HEAPSORT.sort(xs) else xs end
+    end
+
+  sorted_i64(xs: LIST[I64]): LIST[I64]
+    do
+      if xs.length <= 18446744073709551615 then HEAPSORT.sort(xs) else xs end
+    end
+
+  sorted_str(xs: LIST[STRING]): LIST[STRING]
+    do
+      if xs.length <= 18446744073709551615 then HEAPSORT.sort(xs) else xs end
+    end
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let dup_in = e.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let dup_exp = e.prepend(3).prepend(3).prepend(2).prepend(0).prepend(-1).prepend(-1)
+      let ext = e.prepend(-9223372036854775808).prepend(9223372036854775807)
+      let ext_exp = e.prepend(9223372036854775807).prepend(-9223372036854775808)
+      let es: LIST[STRING] = LIST.empty
+      let str_in = es.prepend("b").prepend("delta").prepend("c").prepend("a").prepend("alpha")
+      let str_exp = es.prepend("delta").prepend("c").prepend("b").prepend("alpha").prepend("a")
+      let big = TEST_DATA.scrambled(1500)
+      let asc = TEST_DATA.ascending(0, 1000)
+
+      if not TEST_LIST.same(HEAPSORT_TEST.sorted_i64(e), e) then 1
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_i64(e.prepend(7)), e.prepend(7)) then 2
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_i64(dup_in), dup_exp) then 3
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_i64(ext), ext_exp) then 4
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_str(str_in), str_exp) then 5
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_nat(big), QUICKSORT.sort(big)) then 6
+      else if not TEST_LIST.same(HEAPSORT_TEST.sorted_nat(asc), asc) then 7
+      else 0
+      end end end end end end end
+    end
+
+end

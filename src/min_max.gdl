@@ -1,0 +1,122 @@
+-- Verified minimum and maximum of a non-empty `LIST[K]` (`K: ORD`) in idiomatic, pure, total
+-- Gardel. Algorithm: a single scan (CLRS ch. 9.1), `n - 1` comparisons each.
+--
+-- Proves, for every `K: ORD` and non-empty `xs`:
+--   1. The result is an element of `xs` (`INSERTION_SORT.count_of(Result, xs) >= 1`).
+--   2. `minimum`: no element is less than it (`INSERTION_SORT.all_ge`).
+--      `maximum`: it is less than no element (`all_le`).
+--   3. Termination (`variant xs.length`).
+-- No congruence hypothesis is needed: only strict transitivity is used.
+module MIN_MAX[K: ORD]
+
+create {ANY}
+
+  -- No element of `xs` is greater than `hi` (`not hi.less_than(x)` for every `x`).
+  all_le(hi: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        (not hi.less_than(xs.head)) and MIN_MAX.all_le(hi, xs.tail)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result
+      cons_case: xs.length > 0 implies
+        (Result = ((not hi.less_than(xs.head)) and MIN_MAX.all_le(hi, xs.tail)))
+    end
+
+  -- A smallest element of `xs`.
+  minimum(xs: LIST[K]): K
+    require
+      nonempty: xs.length > 0
+    variant
+      xs.length
+    do
+      let h = xs.head
+      check refl_h: h.equals(h) end
+      if xs.length = 1 then
+        h
+      else
+        let m = MIN_MAX.minimum(xs.tail)
+        if h.less_than(m) then
+          check
+            lowered: INSERTION_SORT.all_ge_weaken(h, m, xs.tail)
+            counted: MIN_MAX.count_nonneg(h, xs.tail)
+          end
+          h
+        else
+          m
+        end
+      end
+    ensure
+      member: INSERTION_SORT.count_of(Result, xs) >= 1
+      least: INSERTION_SORT.all_ge(Result, xs)
+    end
+
+  -- A largest element of `xs`.
+  maximum(xs: LIST[K]): K
+    require
+      nonempty: xs.length > 0
+    variant
+      xs.length
+    do
+      let h = xs.head
+      check refl_h: h.equals(h) end
+      if xs.length = 1 then
+        h
+      else
+        let m = MIN_MAX.maximum(xs.tail)
+        if m.less_than(h) then
+          check
+            raised: MIN_MAX.all_le_raise(m, h, xs.tail)
+            counted: MIN_MAX.count_nonneg(h, xs.tail)
+          end
+          h
+        else
+          m
+        end
+      end
+    ensure
+      member: INSERTION_SORT.count_of(Result, xs) >= 1
+      greatest: MIN_MAX.all_le(Result, xs)
+    end
+
+  -- `INSERTION_SORT.count_of` is never negative. (A lemma rather than a clause of `count_of`,
+  -- which would add arithmetic to every proof that counts, e.g. `QUICKSORT.sort`.)
+  count_nonneg(y: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        check c_rec: MIN_MAX.count_nonneg(y, xs.tail) end
+        True
+      end
+    ensure
+      holds: Result
+      non_negative: INSERTION_SORT.count_of(y, xs) >= 0
+    end
+
+  -- If `a < b` and nothing in `xs` is above `a`, nothing is above `b`.
+  all_le_raise(a: K, b: K, xs: LIST[K]): BOOL
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        True
+      else
+        check
+          rec_raise: MIN_MAX.all_le_raise(a, b, xs.tail)
+          trans: (a.less_than(b) and b.less_than(xs.head)) implies a.less_than(xs.head)
+        end
+        True
+      end
+    ensure
+      holds: Result
+      below_b: (a.less_than(b) and MIN_MAX.all_le(a, xs)) implies MIN_MAX.all_le(b, xs)
+    end
+
+end

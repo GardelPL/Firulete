@@ -38,6 +38,12 @@ Specify and prove full functional correctness, including:
 - **Build large modules incrementally**: when trivial routines time out, a heavy axiom elsewhere in the module is to blame. Strip back to the core, verify (seconds), and add one layer at a time. Spell out a failing lemma's proof as tagged `check` steps (`unfold_*`, `step_*`) to locate the gap.
 - **Bound machine-integer inputs explicitly** when a result sums them (e.g. `fits`: length `<= 10^6`, elements in `[-10^12, 10^12]`), carry `|value| <= B * length` clauses through the recursion, and keep the specification sums in ghost `MATH_INT`.
 - **State `>= 0` on ghost `MATH_INT` measures** (`size`, `count_of`) explicitly; nothing else says they are non-negative.
+- **Keep heavy hypotheses and arithmetic out of widely used contracts.** A congruence hypothesis in a clause of `drain`, or `count_of >= 0` on `INSERTION_SORT.count_of`, entered every client proof and made unrelated proofs (`HEAPSORT.sort`, `QUICKSORT.sort`) fail under some Z3 seeds. Put such facts in separate lemmas (`BINARY_HEAP.drain_sorted`, `MIN_MAX.count_nonneg`) and call them where needed.
+- **Make polynomial lemma conclusions match the goal's terms.** For a step like Bezout's, pass the target terms as arguments (`bez_step(a, b, x, y, cx, cy, g)` concluding `a * cx + b * cy = g`) so the solver need not rewrite products; a lemma over intermediate names made it seed-fragile.
+- **Algorithms built on a library data structure go in `firulete/derived/`**, a separate package that sees the structure through its contracts only (see README "Package Layout"). Inside one package the solver unfolds the structure's bodies and can loop.
+- **Avoid `%` and `/` by a variable** (see README "Compiler Limitations"); use subtraction-based definitions or a ghost quotient.
+- **Return a record, not a `TUPLE`**, from routines whose `ensure` matters.
+- **Check robustness:** verify with `--verify-deps` (uncached) and `--z3-seed 1`, `2`, `3`; every module must pass all of them.
 - **Reuse the shared spec predicates** (`INSERTION_SORT.is_sorted`, `INSERTION_SORT.count_of`) for sorting algorithms, so every sort is specified against the same notion of sortedness and multiset.
 - **Zero `assume` blocks.**
 
@@ -60,7 +66,7 @@ Iterate on counterexamples and failed VCs until both verification steps print `[
 ### Deliverable
 1. `firulete/src/<module_name>.gdl`
 2. `firulete/tests/src/<module_name>_test.gdl`, registered in `firulete_test.gdl`.
-3. Update `firulete/README.md` catalog table (and "Known Spec Gaps" if any).
+3. Update `firulete/README.md`: add a row to "Verified Catalog", remove the module's row from "Roadmap", and update "Known Spec Gaps" if needed.
 4. Summarize the proved specification clauses and flag any assumptions or preconditions for human spec review.
 ```
 

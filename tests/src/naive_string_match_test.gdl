@@ -1,0 +1,66 @@
+-- Tests for `NAIVE_STRING_MATCH[A: EQ]` (`src/naive_string_match.gdl`). See
+-- `insertion_sort_test.gdl` for the conventions.
+functions NAIVE_STRING_MATCH_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The contract alone determines that [1, 2, 1] occurs in [1, 2, 1, 2, 1] at shifts 0 and 2.
+  spec_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let t = e.prepend(1).prepend(2).prepend(1).prepend(2).prepend(1)
+      let p = e.prepend(1).prepend(2).prepend(1)
+      let m = NAIVE_STRING_MATCH.matches(t, p)
+      check
+        s1_at_0: NAIVE_STRING_MATCH.occurs_at(t, p, 0)
+        s1_at_2: NAIVE_STRING_MATCH.occurs_at(t, p, 2)
+        s1_not_1: not NAIVE_STRING_MATCH.occurs_at(t, p, 1)
+        s1_count_0: INSERTION_SORT.count_of(0, m) = 1
+        s1_count_2: INSERTION_SORT.count_of(2, m) = 1
+        s1_count_1: INSERTION_SORT.count_of(1, m) = 0
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- For every text and pattern: exactly the matching shifts, in increasing order.
+  spec_exact(t: LIST[STRING], p: LIST[STRING], s: NAT): BOOL
+    require
+      addressable: t.length < 18446744073709551615
+    do
+      True
+    ensure
+      holds: Result
+      exact: INSERTION_SORT.count_of(s, NAIVE_STRING_MATCH.matches(t, p)) =
+        (if NAIVE_STRING_MATCH.occurs_at(t, p, s) then 1 else 0 end)
+      ascending: INSERTION_SORT.is_sorted(NAIVE_STRING_MATCH.matches(t, p))
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- `matches`, guarded by its precondition.
+  find(t: LIST[NAT], p: LIST[NAT]): LIST[NAT]
+    do
+      if t.length < 18446744073709551615 then NAIVE_STRING_MATCH.matches(t, p) else LIST.empty end
+    end
+
+  -- Words are encoded as letter numbers (`a` = 1, space = 0).
+  run: NAT
+    do
+      let e: LIST[NAT] = LIST.empty
+      if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(1).prepend(2).prepend(1).prepend(2).prepend(1), e.prepend(1).prepend(2).prepend(1)), e.prepend(2).prepend(0)) then 1
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(1).prepend(1).prepend(1).prepend(1), e.prepend(1).prepend(1)), e.prepend(2).prepend(1).prepend(0)) then 2
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(3).prepend(2).prepend(1), e.prepend(4)), e) then 3
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(2).prepend(1), e.prepend(3).prepend(2).prepend(1)), e) then 4
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(2).prepend(1), e), e.prepend(2).prepend(1).prepend(0)) then 5
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e, e), e.prepend(0)) then 6
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(4).prepend(12).prepend(18).prepend(15).prepend(23).prepend(0).prepend(15).prepend(12).prepend(12).prepend(5).prepend(8), e.prepend(15)), e.prepend(7).prepend(4)) then 7
+      else if not TEST_LIST.same(NAIVE_STRING_MATCH_TEST.find(e.prepend(3).prepend(2).prepend(1).prepend(3).prepend(2).prepend(1).prepend(3).prepend(2).prepend(1), e.prepend(2).prepend(1).prepend(3)), e.prepend(5).prepend(2)) then 8
+      else 0
+      end end end end end end end end
+    end
+
+end

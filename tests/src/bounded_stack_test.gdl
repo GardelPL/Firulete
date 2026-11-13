@@ -1,0 +1,93 @@
+-- Tests for `BOUNDED_STACK[A]` (`src/bounded_stack.gdl`). See `insertion_sort_test.gdl` for the
+-- conventions.
+functions BOUNDED_STACK_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The contracts alone determine the stack after a sequence of operations.
+  spec_lifo_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let s0: BOUNDED_STACK[I64] = BOUNDED_STACK.empty(3)
+      let s3 = s0.push(1).push(2).push(3)
+      let s4 = s3.pop.push(4)
+      check
+        s1_empty: s0.is_empty
+        s1_full: s3.is_full
+        s1_contents: s3.contents = e.prepend(1).prepend(2).prepend(3)
+        s1_after: s4.contents = e.prepend(1).prepend(2).prepend(4)
+        s1_top: s4.top.get = 4
+        s1_size: s4.size = 3
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- LIFO for every stack: `push(x).pop` gives the original contents back.
+  spec_lifo(s: BOUNDED_STACK[STRING], x: STRING): BOOL
+    require
+      room: not s.is_full
+    do
+      True
+    ensure
+      holds: Result
+      on_top: s.push(x).top.get.equals(x)
+      undone: s.push(x).pop.contents = s.contents
+      grown: s.push(x).size = s.size + 1
+      within: s.size <= s.capacity
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- Push `i, i + 1, ..., n - 1` onto `s`, as long as there is room.
+  fill(s: BOUNDED_STACK[NAT], i: NAT, n: NAT): BOUNDED_STACK[NAT]
+    variant
+      n - i
+    do
+      if i >= n or s.is_full then s else BOUNDED_STACK_TEST.fill(s.push(i), i + 1, n) end
+    end
+
+  -- Up to `n` elements of `s`, in the order `top` / `pop` yield them.
+  drain(s: BOUNDED_STACK[NAT], n: NAT): LIST[NAT]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match s.top
+          case None then LIST.empty
+          case Some(x) then
+            let rest = BOUNDED_STACK_TEST.drain(s.pop, n - 1)
+            rest.prepend(x)
+        end
+      end
+    end
+
+  run: NAT
+    do
+      let en: LIST[NAT] = LIST.empty
+      let s0: BOUNDED_STACK[NAT] = BOUNDED_STACK.empty(5)
+      let sz: BOUNDED_STACK[NAT] = BOUNDED_STACK.empty(0)
+      let s_full = BOUNDED_STACK_TEST.fill(s0, 0, 100)
+      let full_exp = en.prepend(0).prepend(1).prepend(2).prepend(3).prepend(4)
+      let big: BOUNDED_STACK[NAT] = BOUNDED_STACK.empty(2000)
+      let big_s = BOUNDED_STACK_TEST.fill(big, 0, 1500)
+
+      if not s0.is_empty or s0.size != 0 or s0.capacity != 5 then 1
+      else if not s0.top.is_none or not s0.pop.is_empty then 2
+      else if not sz.is_full then 3
+      else if not s_full.is_full or s_full.size != 5 then 4
+      else if not TEST_LIST.same(BOUNDED_STACK_TEST.drain(s_full, 10), full_exp) then 5
+      else if not TEST_LIST.same(s_full.to_list, full_exp) then 6
+      else if not TEST_LIST.same(s_full.pop.push(9).to_list, full_exp.tail.prepend(9)) then 7
+      else if big_s.size != 1500 then 8
+      else if BOUNDED_STACK_TEST.drain(big_s, 2000).length != 1500 then 9
+      else 0
+      end end end end end end end end end
+    end
+
+end

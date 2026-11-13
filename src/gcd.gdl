@@ -1,0 +1,210 @@
+-- Verified greatest common divisor on `NAT` with Bezout coefficients, in idiomatic, pure, total
+-- Gardel. Algorithm: Euclid's algorithm (CLRS ch. 31.2) in its subtraction form,
+-- `gcd(a, b) = gcd(a - b, b)` for `b <= a`. (CLRS states it with `a mod b`; one `mod` step is a
+-- run of subtraction steps, and the subtraction form keeps every proof linear, so the solver
+-- never faces `%` by a variable.)
+--
+-- Proves, for all `a`, `b`:
+--   1. `gcd(a, b)` divides `a` and `b` (`divides`, defined by repeated subtraction).
+--   2. The law `greatest`: every common divisor of `a` and `b` divides `gcd(a, b)`.
+--   3. Bezout: `a * bezout_x(a, b) + b * bezout_y(a, b) = gcd(a, b)` for the ghost
+--      coefficients (`MATH_INT`, so they cannot overflow) -- the extended Euclid of CLRS.
+--   4. `gcd(a, b) > 0` unless `a = b = 0`, and termination (`variant a + b`).
+-- Not proved: the step count (the subtraction form takes up to `max(a, b)` steps).
+functions GCD
+
+feature {ANY}
+
+  -- `d` divides `n`: `n` is a multiple of `d` (`0` divides only `0`).
+  divides(d: NAT, n: NAT): BOOL
+    variant
+      n
+    do
+      if d = 0 then
+        n = 0
+      else if n = 0 then
+        True
+      else if n < d then
+        False
+      else
+        GCD.divides(d, n - d)
+      end end end
+    ensure
+      by_zero: d = 0 implies Result = (n = 0)
+      of_zero: n = 0 implies Result
+      below: (d > 0 and n > 0 and n < d) implies not Result
+      step: (d > 0 and n >= d) implies Result = GCD.divides(d, n - d)
+    end
+
+  gcd(a: NAT, b: NAT): NAT
+    variant
+      a + b
+    do
+      if a = 0 then
+        b
+      else if b = 0 then
+        a
+      else if b <= a then
+        let r = GCD.gcd(a - b, b)
+        check g_a: GCD.add_div(r, a, b) end
+        r
+      else
+        let r = GCD.gcd(a, b - a)
+        check g_b: GCD.add_div(r, b, a) end
+        r
+      end end end
+    ensure
+      divides_a: GCD.divides(Result, a)
+      divides_b: GCD.divides(Result, b)
+      positive: (a > 0 or b > 0) implies Result > 0
+      zero_left: a = 0 implies Result = b
+      zero_right: b = 0 implies Result = a
+    end
+
+  -- Ghost Bezout coefficients for `gcd(a, b)`.
+  bezout_x(a: NAT, b: NAT): MATH_INT
+    variant
+      a + b
+    do
+      if a = 0 then
+        0
+      else if b = 0 then
+        1
+      else if b <= a then
+        GCD.bezout_x(a - b, b)
+      else
+        GCD.bezout_x(a, b - a) - GCD.bezout_y(a, b - a)
+      end end end
+    end
+
+  bezout_y(a: NAT, b: NAT): MATH_INT
+    variant
+      a + b
+    do
+      if a = 0 then
+        1
+      else if b = 0 then
+        0
+      else if b <= a then
+        GCD.bezout_y(a - b, b) - GCD.bezout_x(a - b, b)
+      else
+        GCD.bezout_y(a, b - a)
+      end end end
+    end
+
+  -- Bezout's identity for the ghost coefficients.
+  bezout(a: NAT, b: NAT): BOOL
+    variant
+      a + b
+    do
+      if a = 0 or b = 0 then
+        True
+      else if b <= a then
+      
+        check
+          z_rec: GCD.bezout(a - b, b)
+          z_gcd: GCD.gcd(a, b) = GCD.gcd(a - b, b)
+          z_step: GCD.bez_step(a, b, GCD.bezout_x(a - b, b), GCD.bezout_y(a - b, b),
+                               GCD.bezout_x(a, b), GCD.bezout_y(a, b), GCD.gcd(a, b))
+        end
+        True
+      else
+        check
+          z_rec: GCD.bezout(a, b - a)
+          z_gcd: GCD.gcd(a, b) = GCD.gcd(a, b - a)
+          z_step: GCD.bez_step(b, a, GCD.bezout_y(a, b - a), GCD.bezout_x(a, b - a),
+                               GCD.bezout_y(a, b), GCD.bezout_x(a, b), GCD.gcd(a, b))
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      identity: a * GCD.bezout_x(a, b) + b * GCD.bezout_y(a, b) = GCD.gcd(a, b)
+    end
+
+  -- One subtraction step of Bezout's identity over plain integers: from `(a - b) x + b y = g`
+  -- to `a X + b Y = g` for `X = x`, `Y = y - x`.
+  bez_step(a: MATH_INT, b: MATH_INT, x: MATH_INT, y: MATH_INT, cx: MATH_INT, cy: MATH_INT,
+           g: MATH_INT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      step: ((a - b) * x + b * y = g and cx = x and cy = y - x) implies a * cx + b * cy = g
+    end
+
+specify {ANY}
+
+  -- Every common divisor of `a` and `b` divides `gcd(a, b)`. With its trigger a client's solver
+  -- applies it wherever `divides(d, gcd(a, b))` appears.
+  law greatest(d: NAT, a: NAT, b: NAT)
+    trigger
+      GCD.divides(d, GCD.gcd(a, b))
+    do
+      GCD.greatest_lemma(d, a, b)
+    ensure
+      common: (GCD.divides(d, a) and GCD.divides(d, b)) implies GCD.divides(d, GCD.gcd(a, b))
+    end
+
+feature {NONE}
+
+  -- Per-`d` proof of `greatest`, following `gcd`'s recursion.
+  greatest_lemma(d: NAT, a: NAT, b: NAT): BOOL
+    variant
+      a + b
+    do
+      if a = 0 or b = 0 then
+        True
+      else if b <= a then
+        check
+          l_sub: GCD.sub_div(d, a, b)
+          l_rec: GCD.greatest_lemma(d, a - b, b)
+          l_gcd: GCD.gcd(a, b) = GCD.gcd(a - b, b)
+        end
+        True
+      else
+        check
+          l_sub: GCD.sub_div(d, b, a)
+          l_rec: GCD.greatest_lemma(d, a, b - a)
+          l_gcd: GCD.gcd(a, b) = GCD.gcd(a, b - a)
+        end
+        True
+      end end
+    ensure
+      holds: Result
+      common: (GCD.divides(d, a) and GCD.divides(d, b)) implies GCD.divides(d, GCD.gcd(a, b))
+    end
+
+  -- A common divisor of `a` and `b` (`b <= a`) divides `a - b`.
+  sub_div(d: NAT, a: NAT, b: NAT): BOOL
+    variant
+      b
+    do
+      if d = 0 or b = 0 or b < d or a < d then
+        True
+      else
+        check s_rec: GCD.sub_div(d, a - d, b - d) end
+        True
+      end
+    ensure
+      holds: Result
+      diff: (b <= a and GCD.divides(d, a) and GCD.divides(d, b)) implies GCD.divides(d, a - b)
+    end
+
+  -- A divisor of `a - b` and `b` (`b <= a`) divides `a`.
+  add_div(d: NAT, a: NAT, b: NAT): BOOL
+    variant
+      b
+    do
+      if d = 0 or b = 0 or b < d or a < d then
+        True
+      else
+        check a_rec: GCD.add_div(d, a - d, b - d) end
+        True
+      end
+    ensure
+      holds: Result
+      sum: (b <= a and GCD.divides(d, a - b) and GCD.divides(d, b)) implies GCD.divides(d, a)
+    end
+
+end

@@ -4,4 +4,4 @@ version = "0.1.0"
 
 [dependencies]
 firulete = { path = ".." }
-
+firulete-derived = { path = "../derived" }

@@ -1,0 +1,236 @@
+-- WORK IN PROGRESS, NOT VERIFIED (not part of any package; see README "Roadmap", MOD_EXP).
+--
+-- Status: `reduce`, `quot`, `mul_mod`, `pow_add`, `pow_split`, `sq_step` and `odd_step` verify.
+-- `mod_exp`'s `division` clause does not: Z3 does not finish (it reports a likely matching loop
+-- even at `--z3-rlimit 300000000`), apparently from the nonlinear facts `x * y = q * m + r` that
+-- every `reduce` / `mul_mod` instance adds. The `%`-free formulation exists only because the
+-- verifier cannot prove even `x % m = x` for `x < m` (see `wip/percent_repro.gdl`); once `%`
+-- is provable, the plain `%`-based algorithm should be tried first.
+--
+-- To work on it: copy this file into `firulete/src/`, verify, and move it back if it still fails.
+-- Verified modular exponentiation on `NAT` in idiomatic, pure, total Gardel.
+-- Algorithm: repeated squaring (CLRS ch. 31.6), `b^e = (b^(e/2))^2 * (b if e is odd)`, every
+-- intermediate value reduced below `m`.
+--
+-- Proves, for `0 < m <= 2^32` (so a product of two residues fits in `NAT`):
+--   1. `mod_exp(b, e, m) < m` and `division`:
+--      `pow(b, e) = exp_quot(b, e, m) * m + mod_exp(b, e, m)`,
+--      Euclidean division of the ghost power `pow(b, e)` (`MATH_INT`) by `m`, which determines the
+--      result uniquely, i.e. `mod_exp(b, e, m) = b^e mod m`.
+--   2. No overflow, and termination (`variant e`).
+-- The reduction `reduce(x, m)` is computed by subtracting doubled multiples of `m`
+-- (O(log(x / m)) steps), not with `%`: the verifier cannot currently reason about `%` by a
+-- variable (see README "Compiler Limitations"). It carries its own ghost quotient `quot`.
+--
+-- Not proved: the `O(log e)` multiplication count.
+functions MOD_EXP
+
+feature {ANY}
+
+  -- Ghost: `b` to the power `e`.
+  pow(b: NAT, e: NAT): MATH_INT
+    variant
+      e
+    do
+      if e = 0 then 1 else b * MOD_EXP.pow(b, e - 1) end
+    ensure
+      zero_case: e = 0 implies Result = 1
+      non_negative: Result >= 0
+    end
+
+  -- One step of `pow`. Kept out of `pow`'s own contract, where `pow(b, e - 1)` would make the
+  -- solver unfold the power without end.
+  pow_unfold(b: NAT, e: NAT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      step: e > 0 implies MOD_EXP.pow(b, e) = b * MOD_EXP.pow(b, e - 1)
+    end
+
+  -- `x mod m`, with `x = quot(x, m) * m + reduce(x, m)`.
+  reduce(x: NAT, m: NAT): NAT
+    require
+      positive: m > 0
+    variant
+      x - m
+    do
+      if x < m then
+        x
+      else if x - m < m then
+        x - m
+      else
+        let r = MOD_EXP.reduce(x, 2 * m)
+        if r >= m then r - m else r end
+      end end
+    ensure
+      below: Result < m
+      division: x = MOD_EXP.quot(x, m) * m + Result
+    end
+
+  -- Ghost: the quotient that goes with `reduce(x, m)`.
+  quot(x: NAT, m: NAT): MATH_INT
+    require
+      positive: m > 0
+    variant
+      x - m
+    do
+      if x < m then
+        0
+      else if x - m < m then
+        1
+      else
+        let q = MOD_EXP.quot(x, 2 * m)
+        if MOD_EXP.reduce(x, 2 * m) >= m then 2 * q + 1 else 2 * q end
+      end end
+    end
+
+  -- `x * y mod m` for residues `x`, `y` (the product fits: `m <= 2^32`).
+  mul_mod(x: NAT, y: NAT, m: NAT): NAT
+    require
+      positive: m > 0
+      small: m <= 4294967296
+      x_below: x < m
+      y_below: y < m
+    do
+      check
+        x_small: x <= 4294967295
+        y_small: y <= 4294967295
+        bound_1: x * y <= 4294967295 * y
+        bound_2: 4294967295 * y <= 4294967295 * 4294967295
+      end
+      MOD_EXP.reduce(x * y, m)
+    ensure
+      below: Result < m
+      division: x * y = MOD_EXP.quot(x * y, m) * m + Result
+    end
+
+  -- `b^e mod m`.
+  mod_exp(b: NAT, e: NAT, m: NAT): NAT
+    require
+      positive: m > 0
+      small: m <= 4294967296
+    variant
+      e
+    do
+      if e = 0 then
+        MOD_EXP.reduce(1, m)
+      else
+        let h = MOD_EXP.mod_exp(b, e / 2, m)
+        let sq = MOD_EXP.mul_mod(h, h, m)
+        let ph = MOD_EXP.pow(b, e / 2)
+        let qh = MOD_EXP.exp_quot(b, e / 2, m)
+        let qs = MOD_EXP.quot(h * h, m)
+        check
+          d_split: MOD_EXP.pow_split(b, e)
+          d_sq: MOD_EXP.sq_step(ph, qh, h, qs, sq, m)
+        end
+        if e % 2 = 0 then
+          sq
+        else
+          let rb = MOD_EXP.reduce(b, m)
+          let t = MOD_EXP.mul_mod(sq, rb, m)
+          check
+            d_odd: MOD_EXP.odd_step(ph * ph, qh * qh * m + 2 * qh * h + qs, sq, b,
+                                    MOD_EXP.quot(b, m), rb, MOD_EXP.quot(sq * rb, m), t, m)
+          end
+          t
+        end
+      end
+    ensure
+      below: Result < m
+      division: MOD_EXP.pow(b, e) = MOD_EXP.exp_quot(b, e, m) * m + Result
+    end
+
+  -- Ghost: the quotient that goes with `mod_exp(b, e, m)`.
+  exp_quot(b: NAT, e: NAT, m: NAT): MATH_INT
+    require
+      positive: m > 0
+      small: m <= 4294967296
+    variant
+      e
+    do
+      if e = 0 then
+        MOD_EXP.quot(1, m)
+      else
+        let qh = MOD_EXP.exp_quot(b, e / 2, m)
+        let h = MOD_EXP.mod_exp(b, e / 2, m)
+        let sq = MOD_EXP.mul_mod(h, h, m)
+        let q2 = qh * qh * m + 2 * qh * h + MOD_EXP.quot(h * h, m)
+        if e % 2 = 0 then
+          q2
+        else
+          let rb = MOD_EXP.reduce(b, m)
+          q2 * b + sq * MOD_EXP.quot(b, m) + MOD_EXP.quot(sq * rb, m)
+        end
+      end
+    end
+
+feature {NONE}
+
+  -- Squaring a value known modulo `m`.
+  sq_step(p: MATH_INT, qh: MATH_INT, h: MATH_INT, qs: MATH_INT, sq: MATH_INT, m: MATH_INT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      squared: (p = qh * m + h and h * h = qs * m + sq) implies
+        p * p = (qh * qh * m + 2 * qh * h + qs) * m + sq
+    end
+
+  -- Multiplying a value known modulo `m` by `b`.
+  odd_step(x: MATH_INT, q: MATH_INT, sq: MATH_INT, b: MATH_INT, qb: MATH_INT, rb: MATH_INT,
+           qt: MATH_INT, t: MATH_INT, m: MATH_INT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      times_b: (x = q * m + sq and b = qb * m + rb and sq * rb = qt * m + t) implies
+        b * x = (q * b + sq * qb + qt) * m + t
+    end
+
+  -- `pow(b, i + j) = pow(b, i) * pow(b, j)`.
+  pow_add(b: NAT, i: NAT, j: NAT): BOOL
+    variant
+      i
+    do
+      if i = 0 or i > 18446744073709551615 - j then
+        True
+      else
+        let k = i - 1
+        check
+          a_rec: MOD_EXP.pow_add(b, k, j)
+          a_sum: MOD_EXP.pow_unfold(b, k + j + 1)
+          a_i: MOD_EXP.pow_unfold(b, k + 1)
+          a_c1: MOD_EXP.pow(b, k + j + 1) = b * MOD_EXP.pow(b, k + j)
+          a_c2: MOD_EXP.pow(b, k + j) = MOD_EXP.pow(b, k) * MOD_EXP.pow(b, j)
+          a_c3: MOD_EXP.pow(b, k + 1) = b * MOD_EXP.pow(b, k)
+          a_c4: b * (MOD_EXP.pow(b, k) * MOD_EXP.pow(b, j)) = (b * MOD_EXP.pow(b, k)) * MOD_EXP.pow(b, j)
+          a_ij: k + 1 = i and k + j + 1 = i + j
+        end
+        True
+      end
+    ensure
+      holds: Result
+      sum: i + j <= 18446744073709551615 implies
+        MOD_EXP.pow(b, i + j) = MOD_EXP.pow(b, i) * MOD_EXP.pow(b, j)
+    end
+
+  -- One squaring step: `pow(b, e)` from `pow(b, e / 2)`.
+  pow_split(b: NAT, e: NAT): BOOL
+    do
+      check
+        s_half: MOD_EXP.pow_add(b, e / 2, e / 2)
+        s_parity: e = 2 * (e / 2) + e % 2
+        s_odd: (e % 2 = 1) implies MOD_EXP.pow_unfold(b, e)
+        s_odd_idx: (e % 2 = 1) implies e - 1 = e / 2 + e / 2
+      end
+      True
+    ensure
+      holds: Result
+      even: (e % 2 = 0) implies MOD_EXP.pow(b, e) = MOD_EXP.pow(b, e / 2) * MOD_EXP.pow(b, e / 2)
+      odd: (e % 2 = 1) implies
+        MOD_EXP.pow(b, e) = b * (MOD_EXP.pow(b, e / 2) * MOD_EXP.pow(b, e / 2))
+    end
+
+end

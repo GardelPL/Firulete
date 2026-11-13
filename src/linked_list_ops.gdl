@@ -1,0 +1,110 @@
+-- Verified singly linked list operations over `LIST[A]` (`A: EQ`) in idiomatic, pure, total
+-- Gardel. Algorithm: CLRS ch. 10.2 (`LIST-INSERT`, `LIST-SEARCH`, `LIST-DELETE`); a Gardel
+-- `LIST` is a persistent singly linked list, so the operations return new lists.
+--
+-- Proves, for every `A: EQ` (counts use `equals`):
+--   1. `insert(x, xs)` puts `x` at the head; every count goes up by one exactly for `y ~ x`.
+--   2. `search(xs, k)`: `Some(i)` gives the first index whose element equals `k` (in bounds,
+--      `LIST_OPS.at(xs, i).equals(k)`, no earlier match); `None` exactly when no element equals
+--      `k` (`count_of(k, xs) = 0`).
+--   3. `delete(xs, k)` removes the first element equal to `k`: the length drops by one if there
+--      is one, and every count drops by one exactly for `y ~ k` (unchanged otherwise).
+--   4. Termination, and no overflow of the returned index.
+module LINKED_LIST_OPS[A: EQ]
+
+create {ANY}
+
+  -- Ghost: the number of elements of `xs` equal to `y`.
+  count_of(y: A, xs: LIST[A]): MATH_INT
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        0
+      else
+        LINKED_LIST_OPS.count_of(y, xs.tail) + (if y.equals(xs.head) then 1 else 0 end)
+      end
+    ensure
+      empty_case: xs.length = 0 implies Result = 0
+      cons_case: xs.length > 0 implies
+        Result = LINKED_LIST_OPS.count_of(y, xs.tail) + (if y.equals(xs.head) then 1 else 0 end)
+      non_negative: Result >= 0
+    end
+
+  insert(x: A, xs: LIST[A]): LIST[A]
+    do
+      xs.prepend(x)
+    ensure
+      at_head: Result = xs.prepend(x)
+      grown: Result.length = xs.length + 1
+      counts: forall y: A.
+        LINKED_LIST_OPS.count_of(y, Result) = LINKED_LIST_OPS.count_of(y, xs) + (if y.equals(x) then 1 else 0 end)
+    end
+
+  -- The index of the first element of `xs` equal to `k`.
+  search(xs: LIST[A], k: A): OPTION[NAT]
+    require
+      addressable: xs.length < 18446744073709551615
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        None
+      else if xs.head.equals(k) then
+        check sym_head: k.equals(xs.head) end
+        Some(0)
+      else
+        check not_head: not k.equals(xs.head) end
+        match LINKED_LIST_OPS.search(xs.tail, k)
+          case None then None
+          case Some(i) then Some(i + 1)
+        end
+      end end
+    ensure
+      found_in_bounds: Result.is_some implies (0 <= Result.get and Result.get < xs.length)
+      found_matches: Result.is_some implies LIST_OPS.at(xs, Result.get).equals(k)
+      first: forall j: NAT. (Result.is_some and j < Result.get) implies not LIST_OPS.at(xs, j).equals(k)
+      absent: Result.is_none = (LINKED_LIST_OPS.count_of(k, xs) = 0)
+    end
+
+  -- `xs` without its first element equal to `k` (unchanged if there is none).
+  delete(xs: LIST[A], k: A): LIST[A]
+    variant
+      xs.length
+    do
+      if xs.length = 0 then
+        xs
+      else
+        let h = xs.head
+        if h.equals(k) then
+          check
+            sym_hk: k.equals(h)
+            same_class: LINKED_LIST_OPS.same_class(h, k)
+          end
+          xs.tail
+        else
+          check not_kh: not k.equals(h) end
+          let rest = LINKED_LIST_OPS.delete(xs.tail, k)
+          rest.prepend(h)
+        end
+      end
+    ensure
+      shorter: LINKED_LIST_OPS.count_of(k, xs) > 0 implies Result.length + 1 = xs.length
+      unchanged: LINKED_LIST_OPS.count_of(k, xs) = 0 implies Result = xs
+      counts: forall y: A. LINKED_LIST_OPS.count_of(y, Result) =
+        LINKED_LIST_OPS.count_of(y, xs) -
+          (if y.equals(k) and LINKED_LIST_OPS.count_of(k, xs) > 0 then 1 else 0 end)
+    end
+
+create {NONE}
+
+  -- For `h ~ k`, every `y` is equal to `h` exactly when it is equal to `k` (`EQ` laws).
+  same_class(h: A, k: A): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      agree: h.equals(k) implies (forall y: A. y.equals(h) = y.equals(k))
+    end
+
+end

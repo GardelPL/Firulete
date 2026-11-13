@@ -46,6 +46,7 @@ specify {ANY}
       end
     ensure
       non_negative: Result >= 0
+      at_most_size: Result <= Current.size
     end
 
   -- Heap order: no child's root is strictly less than its parent's root.
@@ -147,6 +148,30 @@ create {ANY}
         BINARY_HEAP.root_ok(q, Result)
     end
 
+  -- `merge` keeps a common lower bound `q`. Stated per `q`, not as a `forall q` clause of
+  -- `merge` (which makes clients that unfold a drain loop; see the template idioms).
+  merge_lower(q: K, a: BINARY_HEAP[K], b: BINARY_HEAP[K]): BOOL
+    variant
+      a, b
+    do
+      match a
+        case Empty then True
+        case Node(l1, v1, r1) then
+          match b
+            case Empty then True
+            case Node(l2, v2, r2) then
+              if v2.less_than(v1) then
+                BINARY_HEAP.merge_lower(q, a, r2)
+              else
+                BINARY_HEAP.merge_lower(q, r1, b)
+              end
+          end
+      end
+    ensure
+      holds: Result
+      lower: (a.bounded_below(q) and b.bounded_below(q)) implies BINARY_HEAP.merge(a, b).bounded_below(q)
+    end
+
 feature {ANY}
 
   is_empty: BOOL
@@ -208,8 +233,131 @@ feature {ANY}
       heap: Current.is_heap implies Result.is_heap
     end
 
+  -- `delete_min` keeps a lower bound `q`.
+  delete_min_lower(q: K): BOOL
+    do
+      match Current
+        case Empty then True
+        case Node(l, _, r) then BINARY_HEAP.merge_lower(q, l, r)
+      end
+    ensure
+      holds: Result
+      lower: Current.bounded_below(q) implies Current.delete_min.bounded_below(q)
+    end
+
+  -- Up to `n` minima, in the order `find_min` / `delete_min` extract them (heapsort's second
+  -- phase). With `n >= size` it is every element, smallest first.
+  drain(n: NAT): LIST[K]
+    variant
+      n
+    do
+      if n = 0 then
+        LIST.empty
+      else
+        match Current.find_min
+          case None then LIST.empty
+          case Some(m) then
+            let rest = Current.delete_min.drain(n - 1)
+            check
+              d_get: Current.find_min.get = m
+            end
+            rest.prepend(m)
+        end
+      end
+    ensure
+      len: n >= Current.size implies Result.length = Current.size
+      counts: n >= Current.size implies
+        (forall y: K. INSERTION_SORT.count_of(y, Result) = Current.count_of(y))
+    end
+
+
+  -- Under congruence, a heap drains smallest first. A separate lemma, not a clause of `drain`,
+  -- so that the congruence hypothesis does not enter every client proof that mentions `drain`.
+  drain_sorted(n: NAT): BOOL
+    variant
+      n
+    do
+      if n = 0 then
+        True
+      else
+        match Current.find_min
+          case None then True
+          case Some(m) then
+            check
+              t_get: Current.find_min.get = m
+              t_rec: Current.delete_min.drain_sorted(n - 1)
+              t_lower: Current.delete_min.drain_lower(n - 1, m)
+              t_kept: Current.delete_min_lower(m)
+            end
+            True
+        end
+      end
+    ensure
+      holds: Result
+      sorted: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.is_heap) implies INSERTION_SORT.is_sorted(Current.drain(n))
+    end
+
+  -- Under congruence, an element of a heap bounded below by `lo` is not less than `lo`.
+  member_bounded(lo: K, y: K): BOOL
+    variant
+      Current
+    do
+      match Current
+        case Empty then True
+        case Node(l, v, r) then
+          check
+            rec_l: l.member_bounded(lo, y)
+            rec_r: r.member_bounded(lo, y)
+            refl_v: v.equals(v)
+            refl_y: y.equals(y)
+            sym_yv: y.equals(v) implies v.equals(y)
+          end
+          True
+      end
+    ensure
+      holds: Result
+      bounded: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.bounded_below(lo) and Current.count_of(y) >= 1) implies
+        not y.less_than(lo)
+    end
 
 feature {NONE}
+
+  -- Under congruence, draining a heap bounded below by `lo` yields only elements `>= lo`.
+  drain_lower(n: NAT, lo: K): BOOL
+    variant
+      n
+    do
+      if n = 0 then
+        True
+      else
+        match Current.find_min
+          case None then True
+          case Some(m) then
+            check
+              l_get: Current.find_min.get = m
+              l_rec: Current.delete_min.drain_lower(n - 1, lo)
+              l_member: Current.member_bounded(lo, m)
+              l_kept: Current.delete_min_lower(lo)
+            end
+            True
+        end
+      end
+    ensure
+      holds: Result
+      lowered: ((forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) and Current.bounded_below(lo)) implies INSERTION_SORT.all_ge(lo, Current.drain(n))
+    end
 
   -- Under congruence, `not y < x` and every element `>= y` give every element `>= x`.
   lower(x: K, y: K): BOOL

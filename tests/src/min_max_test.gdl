@@ -1,0 +1,88 @@
+-- Tests for `MIN_MAX[K: ORD]` (`src/min_max.gdl`). See `insertion_sort_test.gdl` for the
+-- conventions: `spec_*` are proved from contracts only, `run` returns 0 or the first failing case.
+functions MIN_MAX_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The contract alone pins down the minimum and maximum of a concrete list.
+  spec_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let xs = e.prepend(2).prepend(1).prepend(3)
+      let lo = MIN_MAX.minimum(xs)
+      let hi = MIN_MAX.maximum(xs)
+      check
+        s1_contract: INSERTION_SORT.count_of(lo, xs) >= 1 and INSERTION_SORT.all_ge(lo, xs)
+        s1_t1: xs.tail = e.prepend(2).prepend(1)
+        s1_t2: xs.tail.tail = e.prepend(2)
+        s1_t3: xs.tail.tail.tail = e
+        s1_member: lo.equals(3) or lo.equals(1) or lo.equals(2)
+        s1_eq: (lo.equals(3) = (lo = 3)) and (lo.equals(1) = (lo = 1)) and (lo.equals(2) = (lo = 2))
+        s1_low: not (1).less_than(lo)
+        s1_lt: (1).less_than(lo) = (1 < lo)
+        s1_min: lo = 1
+        s1_hi_member: hi.equals(3) or hi.equals(1) or hi.equals(2)
+        s1_hi_eq: (hi.equals(3) = (hi = 3)) and (hi.equals(1) = (hi = 1)) and (hi.equals(2) = (hi = 2))
+        s1_high: not hi.less_than(3)
+        s1_hi_lt: hi.less_than(3) = (hi < 3)
+        s1_max: hi = 3
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- For every `ORD` (here `STRING`): the results are elements and bound every element.
+  spec_bounds(xs: LIST[STRING]): BOOL
+    require
+      nonempty: xs.length > 0
+    do
+      True
+    ensure
+      holds: Result
+      min_member: INSERTION_SORT.count_of(MIN_MAX.minimum(xs), xs) >= 1
+      min_least: INSERTION_SORT.all_ge(MIN_MAX.minimum(xs), xs)
+      max_member: INSERTION_SORT.count_of(MIN_MAX.maximum(xs), xs) >= 1
+      max_greatest: MIN_MAX.all_le(MIN_MAX.maximum(xs), xs)
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- Typed comparisons: `.equals` / `=` on a value returned by a generic module currently fails
+  -- verifier translation or type inference (see README "Compiler Limitations").
+  same_str(a: STRING, b: STRING): BOOL
+    do
+      a.equals(b)
+    end
+
+  same_i64(a: I64, b: I64): BOOL
+    do
+      a = b
+    end
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let one = e.prepend(42)
+      let mixed = e.prepend(0).prepend(-1).prepend(3).prepend(2).prepend(-1).prepend(3)
+      let ext = e.prepend(-9223372036854775808).prepend(9223372036854775807).prepend(0)
+      let es: LIST[STRING] = LIST.empty
+      let strs = es.prepend("b").prepend("delta").prepend("c").prepend("a").prepend("alpha")
+      let big = TEST_DATA.scrambled(1500)
+      let asc = TEST_DATA.ascending(5, 1000)
+
+      if MIN_MAX.minimum(one) != 42 or MIN_MAX.maximum(one) != 42 then 1
+      else if not MIN_MAX_TEST.same_i64(MIN_MAX.minimum(mixed), -1) then 2
+      else if not MIN_MAX_TEST.same_i64(MIN_MAX.maximum(mixed), 3) then 3
+      else if not MIN_MAX_TEST.same_i64(MIN_MAX.minimum(ext), -9223372036854775808) then 4
+      else if not MIN_MAX_TEST.same_i64(MIN_MAX.maximum(ext), 9223372036854775807) then 5
+      else if not MIN_MAX_TEST.same_str(MIN_MAX.minimum(strs), "a") or not MIN_MAX_TEST.same_str(MIN_MAX.maximum(strs), "delta") then 6
+      else if MIN_MAX.minimum(big) != 0 or MIN_MAX.maximum(big) != 1008 then 7
+      else if MIN_MAX.minimum(asc) != 5 or MIN_MAX.maximum(asc) != 999 then 8
+      else 0
+      end end end end end end end end
+    end
+
+end

@@ -1,0 +1,103 @@
+-- Tests for `LINKED_LIST_OPS[A: EQ]` (`src/linked_list_ops.gdl`). See `insertion_sort_test.gdl`
+-- for the conventions.
+functions LINKED_LIST_OPS_TEST
+
+feature {ANY}
+
+  -- ---------------------------------------------------------------- spec tests (static)
+
+  -- The contracts alone determine search and delete on a concrete list.
+  spec_concrete: BOOL
+    do
+      let e: LIST[I64] = LIST.empty
+      let xs = e.prepend(2).prepend(7).prepend(5).prepend(7)
+      check
+        s1_at: LIST_OPS.at(xs, 0) = 7 and LIST_OPS.at(xs, 1) = 5 and LIST_OPS.at(xs, 2) = 7 and
+          LIST_OPS.at(xs, 3) = 2
+        s1_eq: LIST_OPS.at(xs, 0).equals(7) and LIST_OPS.at(xs, 1).equals(5)
+        s1_neq: not LIST_OPS.at(xs, 0).equals(5)
+        s1_count: LINKED_LIST_OPS.count_of(7, xs) = 2
+        s1_some: LINKED_LIST_OPS.search(xs, 7).is_some
+        s1_bound: LINKED_LIST_OPS.search(xs, 7).get < 4
+        s1_first: LINKED_LIST_OPS.search(xs, 7).get > 0 implies not LIST_OPS.at(xs, 0).equals(7)
+        s1_found: LINKED_LIST_OPS.search(xs, 7).get = 0
+        s1_found_5: LINKED_LIST_OPS.search(xs, 5).get = 1
+        s1_absent: LINKED_LIST_OPS.search(xs, 9).is_none
+        s1_deleted: LINKED_LIST_OPS.count_of(7, LINKED_LIST_OPS.delete(xs, 7)) = 1
+        s1_kept: LINKED_LIST_OPS.count_of(5, LINKED_LIST_OPS.delete(xs, 7)) = 1
+        s1_shorter: LINKED_LIST_OPS.delete(xs, 7).length = 3
+      end
+      True
+    ensure
+      holds: Result
+    end
+
+  -- For every list: `delete` undoes `insert` on the counts, and `search` finds what was inserted.
+  spec_insert_delete(xs: LIST[STRING], x: STRING, y: STRING): BOOL
+    require
+      addressable: xs.length < 18446744073709551614
+    do
+      check
+        refl_x: x.equals(x)
+        at_head: LIST_OPS.at(LINKED_LIST_OPS.insert(x, xs), 0).equals(x)
+      end
+      True
+    ensure
+      holds: Result
+      found: LINKED_LIST_OPS.search(LINKED_LIST_OPS.insert(x, xs), x).get = 0
+      undone: LINKED_LIST_OPS.count_of(y, LINKED_LIST_OPS.delete(LINKED_LIST_OPS.insert(x, xs), x)) =
+        LINKED_LIST_OPS.count_of(y, xs)
+    end
+
+  -- ---------------------------------------------------------------- run tests (executed)
+
+  -- `o` holds `v` (by `match`; see `BINARY_HEAP_TEST.holds_i64`).
+  holds_nat(o: OPTION[NAT], v: NAT): BOOL
+    do
+      match o
+        case None then False
+        case Some(x) then x = v
+      end
+    end
+
+  -- `search` and `delete`, guarded by `search`'s precondition.
+  find_i64(xs: LIST[I64], k: I64): OPTION[NAT]
+    do
+      if xs.length < 18446744073709551615 then LINKED_LIST_OPS.search(xs, k) else None end
+    end
+
+  find_str(xs: LIST[STRING], k: STRING): OPTION[NAT]
+    do
+      if xs.length < 18446744073709551615 then LINKED_LIST_OPS.search(xs, k) else None end
+    end
+
+  find_nat(xs: LIST[NAT], k: NAT): OPTION[NAT]
+    do
+      if xs.length < 18446744073709551615 then LINKED_LIST_OPS.search(xs, k) else None end
+    end
+
+  run: NAT
+    do
+      let e: LIST[I64] = LIST.empty
+      let xs = e.prepend(2).prepend(7).prepend(5).prepend(7)
+      let after = e.prepend(2).prepend(7).prepend(5)
+      let es: LIST[STRING] = LIST.empty
+      let strs = es.prepend("c").prepend("b").prepend("a")
+      let big = TEST_DATA.scrambled(1500)
+
+      if not LINKED_LIST_OPS_TEST.holds_nat(LINKED_LIST_OPS_TEST.find_i64(xs, 7), 0) then 1
+      else if not LINKED_LIST_OPS_TEST.holds_nat(LINKED_LIST_OPS_TEST.find_i64(xs, 2), 3) then 2
+      else if not LINKED_LIST_OPS_TEST.find_i64(xs, 9).is_none then 3
+      else if not LINKED_LIST_OPS_TEST.find_i64(e, 1).is_none then 4
+      else if not TEST_LIST.same(LINKED_LIST_OPS.delete(xs, 7), after) then 5
+      else if not TEST_LIST.same(LINKED_LIST_OPS.delete(xs, 9), xs) then 6
+      else if not TEST_LIST.same(LINKED_LIST_OPS.insert(1, e), e.prepend(1)) then 7
+      else if not LINKED_LIST_OPS_TEST.holds_nat(LINKED_LIST_OPS_TEST.find_str(strs, "c"), 2) then 8
+      else if not TEST_LIST.same(LINKED_LIST_OPS.delete(strs, "b"), es.prepend("c").prepend("a")) then 9
+      else if not LINKED_LIST_OPS_TEST.holds_nat(LINKED_LIST_OPS_TEST.find_nat(big, 552), 0) then 10
+      else if LINKED_LIST_OPS.delete(big, 0).length != 1499 then 11
+      else 0
+      end end end end end end end end end end end
+    end
+
+end

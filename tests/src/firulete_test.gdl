@@ -9,7 +9,8 @@
 -- Exit code: 0 if every selected suite passed, 1 if any failed, 2 if no suite matched the filter.
 --
 -- To add a suite: write `tests/src/<algo>_test.gdl` (`functions <ALGO>_TEST` with `run: NAT`),
--- then add its `wanted` / `rc` / `failed` / `print_line` lines to `main`.
+-- then add its `wanted` / `rc` / `failed` / `print_line` lines to `main`, and its name to the
+-- "known suites" message.
 program FIRULETE_TEST
 
 feature {ANY}
@@ -40,6 +41,8 @@ feature {ANY}
   failed(selected: BOOL, code: NAT): NAT
     do
       if selected and code != 0 then 1 else 0 end
+    ensure
+      at_most_one: Result <= 1
     end
 
   main(args: SEQ[STRING]): IO[EXIT_CODE]
@@ -52,6 +55,13 @@ feature {ANY}
       let w_bh = wanted(filter, "binary_heap")
       let w_bq = wanted(filter, "bounded_queue")
       let w_mx = wanted(filter, "max_subarray")
+      let w_mm = wanted(filter, "min_max")
+      let w_sm = wanted(filter, "simultaneous_min_max")
+      let w_st = wanted(filter, "bounded_stack")
+      let w_gc = wanted(filter, "gcd")
+      let w_ns = wanted(filter, "naive_string_match")
+      let w_ll = wanted(filter, "linked_list_ops")
+      let w_hs = wanted(filter, "heapsort")
       let rc_is = if w_is then INSERTION_SORT_TEST.run else 0 end
       let rc_bs = if w_bs then BINARY_SEARCH_TEST.run else 0 end
       let rc_ms = if w_ms then MERGE_SORT_TEST.run else 0 end
@@ -59,11 +69,19 @@ feature {ANY}
       let rc_bh = if w_bh then BINARY_HEAP_TEST.run else 0 end
       let rc_bq = if w_bq then BOUNDED_QUEUE_TEST.run else 0 end
       let rc_mx = if w_mx then MAX_SUBARRAY_TEST.run else 0 end
-      let failures = failed(w_is, rc_is) + failed(w_bs, rc_bs) + failed(w_ms, rc_ms) + failed(w_qs, rc_qs) + failed(w_bh, rc_bh) + failed(w_bq, rc_bq) + failed(w_mx, rc_mx)
-      if not (w_is or w_bs or w_ms or w_qs or w_bh or w_bq or w_mx) then
+      let rc_mm = if w_mm then MIN_MAX_TEST.run else 0 end
+      let rc_sm = if w_sm then SIMULTANEOUS_MIN_MAX_TEST.run else 0 end
+      let rc_st = if w_st then BOUNDED_STACK_TEST.run else 0 end
+      let rc_gc = if w_gc then GCD_TEST.run else 0 end
+      let rc_ns = if w_ns then NAIVE_STRING_MATCH_TEST.run else 0 end
+      let rc_ll = if w_ll then LINKED_LIST_OPS_TEST.run else 0 end
+      let rc_hs = if w_hs then HEAPSORT_TEST.run else 0 end
+      let failures = failed(w_is, rc_is) + failed(w_bs, rc_bs) + failed(w_ms, rc_ms) + failed(w_qs, rc_qs) + failed(w_bh, rc_bh) + failed(w_bq, rc_bq) + failed(w_mx, rc_mx) + failed(w_mm, rc_mm) + failed(w_sm, rc_sm) + failed(w_st, rc_st) + failed(w_gc, rc_gc) + failed(w_ns, rc_ns) + failed(w_ll, rc_ll) + failed(w_hs, rc_hs)
+      if not (w_is or w_bs or w_ms or w_qs or w_bh or w_bq or w_mx or w_mm or w_sm or w_st or w_gc or w_ns or w_ll or w_hs) then
         with IO
           IO.print_line("firulete-tests: no suite matches the filter; known suites:")
           IO.print_line("  insertion_sort binary_search merge_sort quicksort binary_heap bounded_queue max_subarray")
+          IO.print_line("  min_max simultaneous_min_max bounded_stack gcd naive_string_match linked_list_ops heapsort")
           IO.exit(2)
         end
       else
@@ -75,6 +93,13 @@ feature {ANY}
           IO.print_line(line("binary_heap", w_bh, rc_bh))
           IO.print_line(line("bounded_queue", w_bq, rc_bq))
           IO.print_line(line("max_subarray", w_mx, rc_mx))
+          IO.print_line(line("min_max", w_mm, rc_mm))
+          IO.print_line(line("simultaneous_min_max", w_sm, rc_sm))
+          IO.print_line(line("bounded_stack", w_st, rc_st))
+          IO.print_line(line("gcd", w_gc, rc_gc))
+          IO.print_line(line("naive_string_match", w_ns, rc_ns))
+          IO.print_line(line("linked_list_ops", w_ll, rc_ll))
+          IO.print_line(line("heapsort", w_hs, rc_hs))
           if failures = 0 then
             with IO
               IO.print_line("firulete-tests: all selected suites passed")

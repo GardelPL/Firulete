@@ -1,0 +1,41 @@
+-- Verified heapsort over `LIST[K]` (`K: ORD`) in idiomatic, pure, total Gardel.
+-- Algorithm: CLRS ch. 6.4, build a heap and repeatedly extract its minimum. The heap is the
+-- persistent `BINARY_HEAP` (skew-heap merge) instead of an in-place array: `from_list` builds it
+-- and `BINARY_HEAP.drain` extracts the minima in order.
+--
+-- Proves, for every `K: ORD`:
+--   1. Multiset preservation: `forall y. count_of(y, sort(xs)) = count_of(y, xs)`.
+--   2. Length preservation, and termination.
+-- and, whenever `K`'s `equals` is congruent with `less_than` (true for `I64`, `NAT`, `CHAR`,
+-- `STRING`): sortedness, `INSERTION_SORT.is_sorted(sort(xs))`. The hypothesis is inherited from
+-- `BINARY_HEAP.find_min` (see README "Known Spec Gaps").
+--
+-- Lives in the `firulete/derived` package, which sees `BINARY_HEAP` through its contracts only:
+-- inside one package the solver also sees function bodies, and unfolding `drain` through
+-- `from_list` / `merge` does not finish (see README "Package Layout").
+--
+-- Not proved: the `O(n log n)` cost.
+module HEAPSORT[K: ORD]
+
+create {ANY}
+
+  sort(xs: LIST[K]): LIST[K]
+    require
+      addressable: xs.length <= 18446744073709551615
+    do
+      let h = BINARY_HEAP.from_list(xs)
+      check
+        s_sorted: h.drain_sorted(xs.length)
+      end
+      h.drain(xs.length)
+    ensure
+      same_len: Result.length = xs.length
+      permutation: forall y: K. INSERTION_SORT.count_of(y, Result) = INSERTION_SORT.count_of(y, xs)
+      sorted: (forall a: K. (a.equals(a) implies
+          (forall b: K. (b.equals(b) implies
+            (forall c: K.
+              ((a.equals(b) and b.less_than(c)) implies a.less_than(c)) and
+              ((a.less_than(b) and b.equals(c)) implies a.less_than(c))))))) implies INSERTION_SORT.is_sorted(Result)
+    end
+
+end

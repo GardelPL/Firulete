@@ -1,0 +1,22 @@
+-- Minimal reproduction for an upstream gardelc report: `%` by a variable is not provable.
+--
+-- In a project of its own (`src/` holding only this file), `gardelc --project <dir> --strict`
+-- reports `timeout` for `small_mod` (about 2 minutes, default resource limit), although each
+-- clause is elementary. `/` and `%` by a constant (e.g. `e % 2`) are fine. The C-style
+-- truncating semantics (GUIDE section 3) are presumably encoded in a way Z3 handles poorly;
+-- for `NAT` operands they coincide with Euclidean `div` / `mod`.
+functions PERCENT_REPRO
+
+feature {ANY}
+
+  small_mod(x: NAT, m: NAT): BOOL
+    do
+      True
+    ensure
+      holds: Result
+      below: (m > 0 and x < m) implies x % m = x
+      step: (m > 0 and x >= m) implies x % m = (x - m) % m
+      bound: m > 0 implies x % m < m
+    end
+
+end

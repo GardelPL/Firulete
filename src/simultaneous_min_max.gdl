@@ -1,0 +1,142 @@
+-- Verified simultaneous minimum and maximum of a non-empty `LIST[K]` (`K: ORD`) in idiomatic,
+-- pure, total Gardel. Algorithm: CLRS ch. 9.1. Elements are taken in pairs; the smaller of a
+-- pair is compared only with the minimum so far and the larger only with the maximum, so about
+-- `3 n / 2` comparisons are used instead of `2 (n - 1)`.
+--
+-- Proves, for every `K: ORD` and non-empty `xs`, for `of(xs)` with queries `lo` and `hi`:
+--   1. Both are elements of `xs` (`INSERTION_SORT.count_of(_, xs) >= 1`).
+--   2. Termination (`variant xs.length`).
+-- and, whenever `K`'s `equals` is congruent with `less_than` (true for `I64`, `NAT`, `CHAR`,
+-- `STRING`): no element is less than `lo` (`INSERTION_SORT.all_ge`) and none is greater than
+-- `hi` (`MIN_MAX.all_le`), the guarantees of `MIN_MAX.minimum` / `maximum`.
+-- The hypothesis is needed, not a proof artefact: with `a`, `b` tied (neither less), `b < lo`
+-- and `a` tied with `lo`, the pair step keeps `a` as the pair's minimum and so keeps `lo`.
+-- `MIN_MAX`, which compares every element with the running minimum, needs no hypothesis.
+-- Not proved: the comparison count.
+module SIMULTANEOUS_MIN_MAX[K: ORD]
+
+-- A result record rather than a `TUPLE[K, K]`: gardelc currently publishes no `ensure` for a
+-- routine returning a tuple (see README "Compiler Limitations").
+representation {NONE}
+  low: K
+  high: K
+
+feature {ANY}
+
+  -- The minimum.
+  lo: K
+    do
+      Current.low
+    end
+
+  -- The maximum.
+  hi: K
+    do
+      Current.high
+    end
+
+create {ANY}
+
+  of(xs: LIST[K]): SIMULTANEOUS_MIN_MAX[K]
+    require
+      nonempty: xs.length > 0
+    variant
+      xs.length
+    do
+      let a = xs.head
+      check refl_a: a.equals(a) end
+      if xs.length = 1 then
+        { low = a, high = a }
+      else
+        let b = xs.tail.head
+        let rest = xs.tail.tail
+        check
+          refl_b: b.equals(b)
+          tot_ab: a.less_than(b) or a.equals(b) or b.less_than(a)
+        end
+        -- One comparison orders the pair: `small` is `a` or strictly below it, `large` is `b`
+        -- or strictly above it.
+        let small = SIMULTANEOUS_MIN_MAX.pick_lo(a, b)
+        let large = SIMULTANEOUS_MIN_MAX.pick_hi(b, a)
+        if xs.length = 2 then
+          check
+            two_tail: xs.tail.tail.length = 0
+            two_nn: MIN_MAX.count_nonneg(small, xs.tail) and MIN_MAX.count_nonneg(large, xs.tail)
+            two_lo: not a.less_than(small) and not b.less_than(small)
+            two_hi: not large.less_than(a) and not large.less_than(b)
+          end
+          { low = small, high = large }
+        else
+          let r = SIMULTANEOUS_MIN_MAX.of(rest)
+          let lo = r.lo
+          let hi = r.hi
+          -- One comparison each against the running minimum and maximum.
+          let new_lo = SIMULTANEOUS_MIN_MAX.pick_lo(lo, small)
+          let new_hi = SIMULTANEOUS_MIN_MAX.pick_hi(hi, large)
+          check
+            nn_lo: MIN_MAX.count_nonneg(new_lo, rest) and MIN_MAX.count_nonneg(new_lo, xs.tail)
+            nn_hi: MIN_MAX.count_nonneg(new_hi, rest) and MIN_MAX.count_nonneg(new_hi, xs.tail)
+            refl_lo: lo.equals(lo)
+            refl_hi: hi.equals(hi)
+            lo_lower: INSERTION_SORT.all_ge_weaken(new_lo, lo, rest)
+            hi_raise: MIN_MAX.all_le_raise(hi, new_hi, rest)
+            t_lo: (b.less_than(a) and a.less_than(lo)) implies b.less_than(lo)
+            t_lo2: (a.less_than(b) and b.less_than(lo)) implies a.less_than(lo)
+            t_hi: (b.less_than(a) and hi.less_than(b)) implies hi.less_than(a)
+            t_hi2: (hi.less_than(a) and a.less_than(b)) implies hi.less_than(b)
+            g_lo_a: not a.less_than(new_lo)
+            g_hi_b: not new_hi.less_than(b)
+            g_lo_b: (forall c1: K. (c1.equals(c1) implies
+          (forall c2: K. (c2.equals(c2) implies
+            (forall c3: K.
+              ((c1.equals(c2) and c2.less_than(c3)) implies c1.less_than(c3)) and
+              ((c1.less_than(c2) and c2.equals(c3)) implies c1.less_than(c3))))))) implies not b.less_than(new_lo)
+            g_hi_a: (forall c1: K. (c1.equals(c1) implies
+          (forall c2: K. (c2.equals(c2) implies
+            (forall c3: K.
+              ((c1.equals(c2) and c2.less_than(c3)) implies c1.less_than(c3)) and
+              ((c1.less_than(c2) and c2.equals(c3)) implies c1.less_than(c3))))))) implies not new_hi.less_than(a)
+          end
+          { low = new_lo, high = new_hi }
+        end
+      end
+    ensure
+      lo_member: INSERTION_SORT.count_of(Result.lo, xs) >= 1
+      hi_member: INSERTION_SORT.count_of(Result.hi, xs) >= 1
+      lo_least: (forall c1: K. (c1.equals(c1) implies
+          (forall c2: K. (c2.equals(c2) implies
+            (forall c3: K.
+              ((c1.equals(c2) and c2.less_than(c3)) implies c1.less_than(c3)) and
+              ((c1.less_than(c2) and c2.equals(c3)) implies c1.less_than(c3))))))) implies
+        INSERTION_SORT.all_ge(Result.lo, xs)
+      hi_greatest: (forall c1: K. (c1.equals(c1) implies
+          (forall c2: K. (c2.equals(c2) implies
+            (forall c3: K.
+              ((c1.equals(c2) and c2.less_than(c3)) implies c1.less_than(c3)) and
+              ((c1.less_than(c2) and c2.equals(c3)) implies c1.less_than(c3))))))) implies
+        MIN_MAX.all_le(Result.hi, xs)
+    end
+
+create {NONE}
+
+  -- `y` if it is strictly below `x`, else `x`.
+  pick_lo(x: K, y: K): K
+    do
+      if y.less_than(x) then y else x end
+    ensure
+      one_of: Result = x or (Result = y and y.less_than(x))
+      not_above_x: not x.less_than(Result)
+      not_above_y: not y.less_than(Result)
+    end
+
+  -- `y` if it is strictly above `x`, else `x`.
+  pick_hi(x: K, y: K): K
+    do
+      if x.less_than(y) then y else x end
+    ensure
+      one_of: Result = x or (Result = y and x.less_than(y))
+      not_below_x: not Result.less_than(x)
+      not_below_y: not Result.less_than(y)
+    end
+
+end
